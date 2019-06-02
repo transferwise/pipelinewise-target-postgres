@@ -8,6 +8,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .virtualenvs
+dist/
 
 # Singer JSON files
 properties.json
