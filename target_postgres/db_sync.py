@@ -51,11 +51,11 @@ def column_type(schema_property):
     elif property_format == 'time':
         column_type = 'time'
     elif 'number' in property_type:
-        column_type = 'numeric'
+        column_type = 'float'
     elif 'integer' in property_type and 'string' in property_type:
         column_type = 'character varying'
     elif 'integer' in property_type:
-        column_type = 'bigint'
+        column_type = 'numeric'
     elif 'boolean' in property_type:
         column_type = 'boolean'
 
@@ -83,13 +83,17 @@ def flatten_key(k, parent_key, sep):
     return sep.join(inflected_key)
 
 
-def flatten_schema(d, parent_key=[], sep='__'):
+def flatten_schema(d, parent_key=[], sep='__', level=0, max_level=0):
     items = []
+
+    if 'properties' not in d:
+        return {}
+
     for k, v in d['properties'].items():
         new_key = flatten_key(k, parent_key, sep)
         if 'type' in v.keys():
-            if 'object' in v['type']:
-                items.extend(flatten_schema(v, parent_key + [k], sep=sep).items())
+            if 'object' in v['type'] and 'properties' in v and level < max_level:
+                items.extend(flatten_schema(v, parent_key + [k], sep=sep, level=level+1, max_level=max_level).items())
             else:
                 items.append((new_key, v))
         else:
@@ -99,6 +103,9 @@ def flatten_schema(d, parent_key=[], sep='__'):
                     items.append((new_key, list(v.values())[0][0]))
                 elif list(v.values())[0][0]['type'] == 'array':
                     list(v.values())[0][0]['type'] = ['null', 'array']
+                    items.append((new_key, list(v.values())[0][0]))
+                elif list(v.values())[0][0]['type'] == 'object':
+                    list(v.values())[0][0]['type'] = ['null', 'object']
                     items.append((new_key, list(v.values())[0][0]))
 
     key_func = lambda item: item[0]
@@ -110,14 +117,14 @@ def flatten_schema(d, parent_key=[], sep='__'):
     return dict(sorted_items)
 
 
-def flatten_record(d, parent_key=[], sep='__'):
+def flatten_record(d, parent_key=[], sep='__', level=0, max_level=0):
     items = []
     for k, v in d.items():
         new_key = flatten_key(k, parent_key, sep)
-        if isinstance(v, collections.MutableMapping):
-            items.extend(flatten_record(v, parent_key + [k], sep=sep).items())
+        if isinstance(v, collections.MutableMapping) and level < max_level:
+            items.extend(flatten_record(v, parent_key + [k], sep=sep, level=level+1, max_level=max_level).items())
         else:
-            items.append((new_key, json.dumps(v) if type(v) is list else v))
+            items.append((new_key, json.dumps(v) if type(v) is list or type(v) is dict else v))
     return dict(items)
 
 
@@ -125,20 +132,27 @@ def primary_column_names(stream_schema_message):
     return [safe_column_name(p) for p in stream_schema_message['key_properties']]
 
 
-def stream_name_to_dict(stream_name):
+def stream_name_to_dict(stream_name, separator='-'):
+    catalog_name = None
     schema_name = None
     table_name = stream_name
 
     # Schema and table name can be derived from stream if it's in <schema_nama>-<table_name> format
-    s = stream_name.split('-')
-    if len(s) > 1:
+    s = stream_name.split(separator)
+    if len(s) == 2:
         schema_name = s[0]
-        table_name = '_'.join(s[1:])
+        table_name = s[1]
+    if len(s) > 2:
+        catalog_name = s[0]
+        schema_name = s[1]
+        table_name = '_'.join(s[2:])
 
     return {
+        'catalog_name': catalog_name,
         'schema_name': schema_name,
         'table_name': table_name
     }
+
 
 # pylint: disable=too-many-public-methods
 class DbSync:
@@ -162,15 +176,20 @@ class DbSync:
                                     purposes.
         """
         self.connection_config = connection_config
+        self.stream_schema_message = stream_schema_message
+
+        # Validate connection configuration
         config_errors = validate_config(connection_config)
-        if len(config_errors) == 0:
-            self.connection_config = connection_config
-        else:
+
+        # Exit if config has errors
+        if len(config_errors) > 0:
             logger.error("Invalid configuration:\n   * {}".format('\n   * '.join(config_errors)))
             exit(1)
 
         self.schema_name = None
         self.grantees = None
+
+        # Init stream schema
         if stream_schema_message is not None:
             # Define initial list of indices to created
             self.hard_delete = self.connection_config.get('hard_delete')
@@ -235,10 +254,8 @@ class DbSync:
             if config_schema_mapping and stream_schema_name in config_schema_mapping:
                 self.grantees = config_schema_mapping[stream_schema_name].get('target_schema_select_permissions', self.grantees)
 
-        self.stream_schema_message = stream_schema_message
-
-        if stream_schema_message is not None:
-            self.flatten_schema = flatten_schema(stream_schema_message['schema'])
+            self.data_flattening_max_level = self.connection_config.get('data_flattening_max_level', 0)
+            self.flatten_schema = flatten_schema(stream_schema_message['schema'], max_level=self.data_flattening_max_level)
 
 
     def open_connection(self):
@@ -266,18 +283,13 @@ class DbSync:
 
                 return []
 
-    def copy_from(self, file, table):
-        with self.open_connection() as connection:
-            with connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.copy_from(file, table)
-
-    def table_name(self, stream_name, temporary=False, without_schema=False):
+    def table_name(self, stream_name, is_temporary=False, without_schema=False):
         stream_dict = stream_name_to_dict(stream_name)
         table_name = stream_dict['table_name']
         pg_table_name = table_name.replace('.', '_').replace('-', '_').lower()
 
-        if temporary:
-            return 'tmp_' + str(uuid.uuid4()).replace('-', '_')
+        if is_temporary:
+            return 'tmp_{}'.format(str(uuid.uuid4()).replace('-', '_'))
 
         if without_schema:
             return '{}'.format(pg_table_name)
@@ -287,7 +299,7 @@ class DbSync:
     def record_primary_key_string(self, record):
         if len(self.stream_schema_message['key_properties']) == 0:
             return None
-        flatten = flatten_record(record)
+        flatten = flatten_record(record, max_level=self.data_flattening_max_level)
         try:
             key_props = [str(flatten[p]) for p in self.stream_schema_message['key_properties']]
         except Exception as exc:
@@ -296,7 +308,7 @@ class DbSync:
         return ','.join(key_props)
 
     def record_to_csv_line(self, record):
-        flatten = flatten_record(record)
+        flatten = flatten_record(record, max_level=self.data_flattening_max_level)
         return ','.join(
             [
                 json.dumps(flatten[name], ensure_ascii=False) if name in flatten and (flatten[name] == 0 or flatten[name]) else ''
@@ -307,12 +319,12 @@ class DbSync:
     def load_csv(self, file, count):
         stream_schema_message = self.stream_schema_message
         stream = stream_schema_message['stream']
-        logger.info("Loading {} rows into '{}'".format(count, stream))
+        logger.info("Loading {} rows into '{}'".format(count, self.table_name(stream, False)))
 
         with self.open_connection() as connection:
             with connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                temp_table = self.table_name(stream_schema_message['stream'], temporary=True)
-                cur.execute(self.create_table_query(table_name=temp_table, temporary=True))
+                temp_table = self.table_name(stream_schema_message['stream'], is_temporary=True)
+                cur.execute(self.create_table_query(table_name=temp_table, is_temporary=True))
 
                 copy_sql = "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, ESCAPE '\\')".format(
                     temp_table,
@@ -381,7 +393,7 @@ class DbSync:
     def column_names(self):
         return [safe_column_name(name) for name in self.flatten_schema]
 
-    def create_table_query(self, table_name=None, temporary=False):
+    def create_table_query(self, table_name=None, is_temporary=False):
         stream_schema_message = self.stream_schema_message
         columns = [
             column_clause(
@@ -395,10 +407,10 @@ class DbSync:
             if len(stream_schema_message['key_properties']) else []
 
         if not table_name:
-            gen_table_name = self.table_name(stream_schema_message['stream'], temporary=temporary)
+            gen_table_name = self.table_name(stream_schema_message['stream'], is_temporary=is_temporary)
 
         return 'CREATE {}TABLE IF NOT EXISTS {} ({})'.format(
-            'TEMP ' if temporary else '',
+            'TEMP ' if is_temporary else '',
             table_name if table_name else gen_table_name,
             ', '.join(columns + primary_key)
         )
