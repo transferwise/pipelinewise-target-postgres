@@ -7,6 +7,7 @@ import inflection
 import re
 import uuid
 import itertools
+import time
 
 logger = singer.get_logger()
 
@@ -49,7 +50,7 @@ def column_type(schema_property):
     elif property_format == 'date-time':
         column_type = 'timestamp without time zone'
     elif property_format == 'time':
-        column_type = 'time'
+        column_type = 'time without time zone'
     elif 'number' in property_type:
         column_type = 'float'
     elif 'integer' in property_type and 'string' in property_type:
@@ -514,18 +515,24 @@ class DbSync:
         ]
 
         for (column_name, column) in columns_to_replace:
-            self.drop_column(column_name, stream)
+            self.version_column(column_name, stream)
             self.add_column(column, stream)
 
-    def add_column(self, column, stream):
-        add_column = "ALTER TABLE {} ADD COLUMN {}".format(self.table_name(stream), column)
-        logger.info('Adding column: {}'.format(add_column))
-        self.query(add_column)
 
     def drop_column(self, column_name, stream):
         drop_column = "ALTER TABLE {} DROP COLUMN {}".format(self.table_name(stream), column_name)
         logger.info('Dropping column: {}'.format(drop_column))
         self.query(drop_column)
+
+    def version_column(self, column_name, stream):
+        version_column = "ALTER TABLE {} RENAME COLUMN {} TO \"{}_{}\"".format(self.table_name(stream, False), column_name, column_name.replace("\"",""), time.strftime("%Y%m%d_%H%M"))
+        logger.info('Dropping column: {}'.format(version_column))
+        self.query(version_column)
+
+    def add_column(self, column, stream):
+        add_column = "ALTER TABLE {} ADD COLUMN {}".format(self.table_name(stream), column)
+        logger.info('Adding column: {}'.format(add_column))
+        self.query(add_column)
 
     def sync_table(self):
         stream_schema_message = self.stream_schema_message
