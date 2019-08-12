@@ -75,7 +75,7 @@ def persist_lines(config, lines):
     csv_files_to_load = {}
     row_count = {}
     stream_to_sync = {}
-    batch_size = config['batch_size'] if 'batch_size' in config else 100000
+    batch_size_rows = config.get('batch_size_rows', 100000)
 
     # Loop over lines from stdin
     for line in lines:
@@ -122,7 +122,7 @@ def persist_lines(config, lines):
 
             row_count[stream] = len(records_to_load[stream])
 
-            if row_count[stream] >= batch_size:
+            if row_count[stream] >= batch_size_rows:
                 flush_records(stream, records_to_load[stream], row_count[stream], stream_to_sync[stream])
                 row_count[stream] = 0
                 records_to_load[stream] = {}
@@ -206,10 +206,7 @@ def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=F
 
 def flush_records(stream, records_to_load, row_count, db_sync):
     csv_fd, csv_file = tempfile.mkstemp()
-    logger.info("Creating temporary file with data at {}".format(csv_file))
-
     with open(csv_fd, 'w+b') as f:
-        # Write csv file with data
         for record in records_to_load.values():
             csv_line = db_sync.record_to_csv_line(record)
             f.write(bytes(csv_line + '\n', 'UTF-8'))

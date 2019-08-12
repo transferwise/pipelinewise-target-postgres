@@ -254,6 +254,60 @@ class TestIntegration(unittest.TestCase):
             ])
 
 
+    def test_nested_schema_unflattening(self):
+        """Loading nested JSON objects into JSONB columns without flattening"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-nested-schema.json')
+
+        # Load with default settings - Flattening disabled
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # Get loaded rows from tables - Transform JSON to string at query time
+        postgres = DbSync(self.config)
+        target_schema = self.config.get('default_target_schema', '')
+        unflattened_table = postgres.query("""SELECT * FROM {}.test_table_nested_schema ORDER BY c_pk""".format(target_schema))
+
+        # Should be valid nested JSON strings
+        self.assertEqual(
+            self.remove_metadata_columns_from_rows(unflattened_table),
+            [{
+                'c_pk': 1,
+                'c_array': [1, 2, 3],
+                'c_object': {"key_1": "value_1"},
+                'c_object_with_props': {"key_1": "value_1"},
+                'c_nested_object': {"nested_prop_1": "nested_value_1", "nested_prop_2": "nested_value_2", "nested_prop_3": {"multi_nested_prop_1": "multi_value_1", "multi_nested_prop_2": "multi_value_2"}}
+            }])
+
+
+    def test_nested_schema_flattening(self):
+        """Loading nested JSON objects with flattening and not not flattening"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-nested-schema.json')
+
+        # Turning on data flattening
+        self.config['data_flattening_max_level'] = 10
+
+        # Load with default settings - Flattening enabled
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # Get loaded rows from tables
+        postgres = DbSync(self.config)
+        target_schema = self.config.get('default_target_schema', '')
+        flattened_table = postgres.query("SELECT * FROM {}.test_table_nested_schema ORDER BY c_pk".format(target_schema))
+
+        # Should be flattened columns
+        self.assertEqual(
+            self.remove_metadata_columns_from_rows(flattened_table),
+            [{
+                'c_pk': 1,
+                'c_array': [1, 2, 3],
+                'c_object': None,   # Cannot map RECORD to SCHEMA. SCHEMA doesn't have properties that requires for flattening
+                'c_object_with_props__key_1': 'value_1',
+                'c_nested_object__nested_prop_1': 'nested_value_1',
+                'c_nested_object__nested_prop_2': 'nested_value_2',
+                'c_nested_object__nested_prop_3__multi_nested_prop_1': 'multi_value_1',
+                'c_nested_object__nested_prop_3__multi_nested_prop_2': 'multi_value_2',
+            }])
+
+
     def test_schema_mapping(self):
         """Load stream into a specific schema, create indices and grant permissions"""
         tap_lines = test_utils.get_test_tap_lines('messages-with-three-streams.json')
