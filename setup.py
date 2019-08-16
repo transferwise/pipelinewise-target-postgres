@@ -13,7 +13,7 @@ setup(name="pipelinewise-target-postgres",
       author="TransferWise",
       url='https://github.com/transferwise/pipelinewise-target-postgres',
       classifiers=[
-          'License :: OSI Approved :: MIT License',
+          'License :: OSI Approved :: Apache Software License',
           'Programming Language :: Python :: 3 :: Only'
       ],
       py_modules=["target_postgres"],
