@@ -231,6 +231,41 @@ class TestIntegration(unittest.TestCase):
             ])
 
 
+    def test_loading_long_text(self):
+        """Loading long texts"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-long-texts.json')
+
+        # Load with default settings
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # Get loaded rows from tables
+        postgres = DbSync(self.config)
+        target_schema = self.config.get('default_target_schema', '')
+        table_long_texts = postgres.query("SELECT * FROM {}.test_table_long_texts ORDER BY c_pk".format(target_schema))
+
+        # Test not very long texts by exact match
+        self.assertEqual(
+            self.remove_metadata_columns_from_rows(table_long_texts)[:3],
+            [
+                    {'c_int': 1, 'c_pk': 1, 'c_varchar': 'Up to 128 characters: Lorem ipsum dolor sit amet, consectetuer adipiscing elit.'},
+                    {'c_int': 2, 'c_pk': 2, 'c_varchar': 'Up to 256 characters: Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec quam felis, ultricies.'},
+                    {'c_int': 3, 'c_pk': 3, 'c_varchar': 'Up to 1024 characters: Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec quam felis, ultricies nec, pellentesque eu, pretium quis, sem. Nulla consequat massa quis enim. Donec pede justo, fringilla vel, aliquet nec, vulputate eget, arcu. In enim justo, rhoncus ut, imperdiet a, venenatis vitae, justo. Nullam dictum felis eu pede mollis pretium. Integer tincidunt. Cras dapibus. Vivamus elementum semper nisi. Aenean vulputate eleifend tellus. Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. Aliquam lorem ante, dapibus in, viverra quis, feugiat a, tellus. Phasellus viverra nulla ut metus varius laoreet. Quisque rutrum. Aenean imperdiet. Etiam ultricies nisi vel augue. Curabitur ullamcorper ultricies nisi. Nam eget dui. Etiam rhoncus. Maecenas tempus, tellus eget condimentum rhoncus, sem quam semper libero, sit amet adipiscing sem neque sed ipsum.'},
+            ])
+
+        # Test very long texts by string length
+        record_4k = table_long_texts[3]
+        record_32k = table_long_texts[4]
+        self.assertEqual(
+            [
+                {'c_int': int(record_4k.get('c_int')), 'c_pk': int(record_4k.get('c_pk')), 'len': len(record_4k.get('c_varchar'))},
+                {'c_int': int(record_32k.get('c_int')), 'c_pk': int(record_32k.get('c_pk')), 'len': len(record_32k.get('c_varchar'))},
+            ],
+            [
+                {'c_int': 4, 'c_pk': 4, 'len': 4017},
+                {'c_int': 5, 'c_pk': 5, 'len': 32003},
+            ])
+
+
     def test_non_db_friendly_columns(self):
         """Loading non-db friendly columns like, camelcase, minus signs, etc."""
         tap_lines = test_utils.get_test_tap_lines('messages-with-non-db-friendly-columns.json')
