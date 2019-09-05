@@ -155,7 +155,7 @@ def stream_name_to_dict(stream_name, separator='-'):
     }
 
 
-# pylint: disable=too-many-public-methods
+# pylint: disable=too-many-public-methods,too-many-instance-attributes
 class DbSync:
     def __init__(self, connection_config, stream_schema_message=None):
         """
