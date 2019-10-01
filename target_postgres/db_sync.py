@@ -544,9 +544,7 @@ class DbSync:
             logger.info("Table '{}' does not exist. Creating... {}".format(table_name, query))
             self.query(query)
 
-            if 'grant_select_to' in self.connection_config:
-                grant_select_to = self.connection_config['grant_select_to']
-                self.grant_privilege(self.schema_name, grant_select_to, self.grant_select_on_all_tables_in_schema)
+            self.grant_privilege(self.schema_name, self.grantees, self.grant_select_on_all_tables_in_schema)
         else:
             logger.info("Table '{}' exists".format(table_name))
             self.update_columns()
