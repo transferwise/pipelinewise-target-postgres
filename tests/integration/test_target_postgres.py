@@ -449,12 +449,12 @@ class TestIntegration(unittest.TestCase):
         postgres.query("CREATE GROUP group_2 WITH USER user_2")
 
         # When grantees is a string then privileges should be granted to single user
-        #postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
+        postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
         self.config['default_target_schema_select_permissions'] = 'group_1'
         target_postgres.persist_lines(self.config, tap_lines)
 
         # When grantees is a list then privileges should be granted to list of user
-        #postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
+        postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
         self.config['default_target_schema_select_permissions'] = ['group_1', 'group_2']
         target_postgres.persist_lines(self.config, tap_lines)
 
