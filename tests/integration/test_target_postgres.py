@@ -425,3 +425,54 @@ class TestIntegration(unittest.TestCase):
             should_metadata_columns_exist=True,
             should_hard_deleted_rows=True
         )
+
+
+    def test_grant_privileges(self):
+        """Tests GRANT USAGE and SELECT privileges on newly created tables"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-three-streams.json')
+
+        # Create test users and groups
+        postgres = DbSync(self.config)
+        postgres.query("DROP USER IF EXISTS user_1")
+        postgres.query("DROP USER IF EXISTS user_2")
+        try:
+            postgres.query("DROP GROUP group_1") # DROP GROUP has no IF EXISTS
+        except:
+            pass
+        try:
+            postgres.query("DROP GROUP group_2")
+        except:
+            pass
+        postgres.query("CREATE USER user_1 WITH PASSWORD 'Abcdefgh1234'")
+        postgres.query("CREATE USER user_2 WITH PASSWORD 'Abcdefgh1234'")
+        postgres.query("CREATE GROUP group_1 WITH USER user_1, user_2")
+        postgres.query("CREATE GROUP group_2 WITH USER user_2")
+
+        # When grantees is a string then privileges should be granted to single user
+        postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
+        self.config['default_target_schema_select_permissions'] = 'group_1'
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # When grantees is a list then privileges should be granted to list of user
+        postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
+        self.config['default_target_schema_select_permissions'] = ['group_1', 'group_2']
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # Grant privileges as dict should pass but should be ignored - Dict not supported for target-postgres
+        postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
+        self.config['default_target_schema_select_permissions'] = {
+            'users': ['user_1', 'user_2'],
+            'groups': ['group_1', 'group_2']}
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # Granting not existing group should raise exception
+        postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
+        with assert_raises(Exception):
+            self.config['default_target_schema_select_permissions'] = 'group_not_exists_1'
+            target_postgres.persist_lines(self.config, tap_lines)
+
+        # Granting not existing list of groups should raise exception
+        postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
+        with assert_raises(Exception):
+            self.config['default_target_schema_select_permissions'] = ['group_not_exists_1', 'group_not_exists_2']
+            target_postgres.persist_lines(self.config, tap_lines)
