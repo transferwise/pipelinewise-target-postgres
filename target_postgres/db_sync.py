@@ -9,7 +9,7 @@ import uuid
 import itertools
 import time
 
-logger = singer.get_logger()
+logger = singer.get_logger('target_postgres')
 
 
 def validate_config(config):
