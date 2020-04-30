@@ -56,9 +56,19 @@ def column_type(schema_property):
     elif 'integer' in property_type and 'string' in property_type:
         column_type = 'character varying'
     elif 'integer' in property_type:
-        column_type = 'numeric'
+        if 'maximum' in schema_property:
+            if schema_property['maximum'] <= 32767:
+                column_type = 'smallint'
+            elif schema_property['maximum'] <= 2147483647:
+                column_type = 'integer'
+            elif schema_property['maximum'] <= 9223372036854775807:
+                column_type = 'bigint'
+        else:
+            column_type = 'numeric'
     elif 'boolean' in property_type:
         column_type = 'boolean'
+
+    logger.debug("schema_property: %s -> column_type: %s", schema_property, column_type)
 
     return column_type
 
