@@ -16,11 +16,13 @@ from jsonschema import Draft4Validator, FormatChecker
 
 from target_postgres.db_sync import DbSync
 
-logger = singer.get_logger('target_postgres')
+
+LOGGER = singer.get_logger('target_postgres')
+
 
 def float_to_decimal(value):
-    '''Walk the given data structure and turn all instances of float into
-    double.'''
+    """Walk the given data structure and turn all instances of float into
+    double."""
     if isinstance(value, float):
         return Decimal(str(value))
     if isinstance(value, list):
@@ -29,6 +31,7 @@ def float_to_decimal(value):
         return {k: float_to_decimal(v) for k, v in value.items()}
     return value
 
+
 def add_metadata_columns_to_schema(schema_message):
     """Metadata _sdc columns according to the stitch documentation at
     https://www.stitchdata.com/docs/data-structure/integration-schemas#sdc-columns
@@ -36,13 +39,16 @@ def add_metadata_columns_to_schema(schema_message):
     Metadata columns gives information about data injections
     """
     extended_schema_message = schema_message
-    extended_schema_message['schema']['properties']['_sdc_extracted_at'] = { 'type': ['null', 'string'], 'format': 'date-time' }
-    extended_schema_message['schema']['properties']['_sdc_batched_at'] = { 'type': ['null', 'string'], 'format': 'date-time' }
-    extended_schema_message['schema']['properties']['_sdc_deleted_at'] = { 'type': ['null', 'string'] }
+    extended_schema_message['schema']['properties']['_sdc_extracted_at'] = {'type': ['null', 'string'],
+                                                                            'format': 'date-time'}
+    extended_schema_message['schema']['properties']['_sdc_batched_at'] = {'type': ['null', 'string'],
+                                                                          'format': 'date-time'}
+    extended_schema_message['schema']['properties']['_sdc_deleted_at'] = {'type': ['null', 'string']}
 
     return extended_schema_message
 
-def add_metadata_values_to_record(record_message, stream_to_sync):
+
+def add_metadata_values_to_record(record_message):
     """Populate metadata _sdc columns from incoming record message
     The location of the required attributes are fixed in the stream
     """
@@ -53,15 +59,20 @@ def add_metadata_values_to_record(record_message, stream_to_sync):
 
     return extended_record
 
+
 def emit_state(state):
+    """Emit state message to standard output then it can be
+    consumed by other components"""
     if state is not None:
         line = json.dumps(state)
-        logger.debug('Emitting state {}'.format(line))
+        LOGGER.debug('Emitting state %s', line)
         sys.stdout.write("{}\n".format(line))
         sys.stdout.flush()
 
-# pylint: disable=too-many-locals,too-many-branches,too-many-statements
+
+# pylint: disable=too-many-locals,too-many-branches,too-many-statements,invalid-name,consider-iterating-dictionary
 def persist_lines(config, lines):
+    """Read singer messages and process them line by line"""
     state = None
     schemas = {}
     key_properties = {}
@@ -77,7 +88,7 @@ def persist_lines(config, lines):
         try:
             o = json.loads(line)
         except json.decoder.JSONDecodeError:
-            logger.error("Unable to parse:\n{}".format(line))
+            LOGGER.error('Unable to parse:\n%s', line)
             raise
 
         if 'type' not in o:
@@ -99,8 +110,9 @@ def persist_lines(config, lines):
                 validators[stream].validate(float_to_decimal(o['record']))
             except Exception as ex:
                 if type(ex).__name__ == "InvalidOperation":
-                    logger.error("Data validation failed and cannot load to destination. RECORD: {}\n'multipleOf' validations that allows long precisions are not supported (i.e. with 15 digits or more). Try removing 'multipleOf' methods from JSON schema."
-                    .format(o['record']))
+                    LOGGER.error("Data validation failed and cannot load to destination. RECORD: %s\n'multipleOf' "
+                                 "validations that allows long precisions are not supported (i.e. with 15 digits or"
+                                 "more). Try removing 'multipleOf' methods from JSON schema.", o['record'])
                     raise ex
 
             primary_key_string = stream_to_sync[stream].record_primary_key_string(o['record'])
@@ -111,7 +123,7 @@ def persist_lines(config, lines):
                 records_to_load[stream] = {}
 
             if config.get('add_metadata_columns') or config.get('hard_delete'):
-                records_to_load[stream][primary_key_string] = add_metadata_values_to_record(o, stream_to_sync[stream])
+                records_to_load[stream][primary_key_string] = add_metadata_values_to_record(o)
             else:
                 records_to_load[stream][primary_key_string] = o['record']
 
@@ -124,7 +136,7 @@ def persist_lines(config, lines):
 
             state = None
         elif t == 'STATE':
-            logger.debug('Setting state to {}'.format(o['value']))
+            LOGGER.debug('Setting state to %s', o['value'])
             state = o['value']
         elif t == 'SCHEMA':
             if 'stream' not in o:
@@ -152,7 +164,7 @@ def persist_lines(config, lines):
             #  or
             #  2) Use fastsync [postgres-to-snowflake, mysql-to-snowflake, etc.]
             if config.get('primary_key_required', True) and len(o['key_properties']) == 0:
-                logger.critical("Primary key is set to mandatory but not defined in the [{}] stream".format(stream))
+                LOGGER.critical("Primary key is set to mandatory but not defined in the [%s] stream", stream)
                 raise Exception("key_properties field is required")
 
             key_properties[stream] = o['key_properties']
@@ -167,7 +179,7 @@ def persist_lines(config, lines):
             row_count[stream] = 0
             csv_files_to_load[stream] = NamedTemporaryFile(mode='w+b')
         elif t == 'ACTIVATE_VERSION':
-            logger.debug('ACTIVATE_VERSION message')
+            LOGGER.debug('ACTIVATE_VERSION message')
         else:
             raise Exception("Unknown message type {} in message {}"
                             .format(o['type'], o))
@@ -181,12 +193,14 @@ def persist_lines(config, lines):
             row_count=row_count[stream],
             db_sync=stream_to_sync[stream],
             delete_rows=config.get('hard_delete')
-        ) for (stream) in records_to_load.keys())
+        ) for stream in records_to_load.keys())
 
     return state
 
 
 def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=False):
+    """Load a batch of records and do post load operations, like creating
+    or deleting rows"""
     #Load into snowflake
     if row_count > 0:
         flush_records(stream, records_to_load, row_count, db_sync)
@@ -199,7 +213,9 @@ def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=F
         db_sync.delete_rows(stream)
 
 
+# pylint: disable=unused-argument
 def flush_records(stream, records_to_load, row_count, db_sync):
+    """Take a list of records and load into database"""
     csv_fd, csv_file = tempfile.mkstemp()
     with open(csv_fd, 'w+b') as f:
         for record in records_to_load.values():
@@ -215,21 +231,23 @@ def flush_records(stream, records_to_load, row_count, db_sync):
 
 
 def main():
+    """Main entry point"""
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', help='Config file')
     args = parser.parse_args()
 
     if args.config:
-        with open(args.config) as input:
-            config = json.load(input)
+        with open(args.config) as config_input:
+            config = json.load(config_input)
     else:
         config = {}
 
-    input = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
-    state = persist_lines(config, input)
+    # Consume singer messages
+    singer_messages = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
+    state = persist_lines(config, singer_messages)
 
     emit_state(state)
-    logger.debug("Exiting normally")
+    LOGGER.debug("Exiting normally")
 
 
 if __name__ == '__main__':
