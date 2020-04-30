@@ -52,7 +52,7 @@ class TestUnit(unittest.TestCase):
 
 
     def test_column_type_mapping(self):
-        """Test JSON type to Snowflake column type mappings"""
+        """Test JSON type to Postgres column type mappings"""
         mapper = target_postgres.db_sync.column_type
 
         # Incoming JSON schema types
@@ -63,13 +63,16 @@ class TestUnit(unittest.TestCase):
         json_t =            {"type": ["string"]             , "format": "time"}
         json_t_or_null =    {"type": ["string", "null"]     , "format": "time"}
         json_num =          {"type": ["number"]             }
-        json_int =          {"type": ["integer"]            }
+        json_smallint =     {"type": ["integer"]            , "maximum": 32767, "minimum": -32768}
+        json_int =          {"type": ["integer"]            , "maximum": 2147483647, "minimum": -2147483648}
+        json_bigint =       {"type": ["integer"]            , "maximum": 9223372036854775807, "minimum": -9223372036854775808}
+        json_nobound_int =  {"type": ["integer"]            }
         json_int_or_str =   {"type": ["integer", "string"]  }
         json_bool =         {"type": ["boolean"]            }
         json_obj =          {"type": ["object"]             }
         json_arr =          {"type": ["array"]              }
         
-        # Mapping from JSON schema types ot Snowflake column types
+        # Mapping from JSON schema types to Postgres column types
         self.assertEquals(mapper(json_str)          , 'character varying')
         self.assertEquals(mapper(json_str_or_null)  , 'character varying')
         self.assertEquals(mapper(json_dt)           , 'timestamp without time zone')
@@ -77,7 +80,10 @@ class TestUnit(unittest.TestCase):
         self.assertEquals(mapper(json_t)            , 'time without time zone')
         self.assertEquals(mapper(json_t_or_null)    , 'time without time zone')
         self.assertEquals(mapper(json_num)          , 'double precision')
-        self.assertEquals(mapper(json_int)          , 'numeric')
+        self.assertEquals(mapper(json_smallint)     , 'smallint')
+        self.assertEquals(mapper(json_int)          , 'integer')
+        self.assertEquals(mapper(json_bigint)       , 'bigint')
+        self.assertEquals(mapper(json_nobound_int)  , 'numeric')
         self.assertEquals(mapper(json_int_or_str)   , 'character varying')
         self.assertEquals(mapper(json_bool)         , 'boolean')
         self.assertEquals(mapper(json_obj)          , 'jsonb')
