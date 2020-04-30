@@ -1,0 +1,63 @@
+version: 2
+
+references:
+  container_config: &container_config
+    docker:
+      # Main Python container
+      - image: circleci/python:3.6.2
+        environment:
+          TAP_POSTGRES_PORT: 5432
+          TAP_POSTGRES_USER: test_user
+          TAP_POSTGRES_PASSWORD: my-secret-passwd
+          TAP_POSTGRES_HOST: test_postgres
+
+      # PostgreSQL service container image used as test source database
+      - image: postgres:11.4
+        name: test_postgres
+        environment:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: my-secret-passwd
+          POSTGRES_DB: tap_postgres_test
+        ports:
+          - 5432:5432
+
+jobs:
+  build:
+    <<: *container_config
+
+    steps:
+      - checkout
+
+      - run:
+          name: 'Setup virtual environment'
+          command: |
+            python3 -m venv ./virtualenvs/target-postgres
+            . ./virtualenvs/target-postgres/bin/activate
+            pip install --upgrade pip
+            pip install -e .[test]
+
+      - run:
+          name: 'Pylinting'
+          command: |
+            . ./virtualenvs/target-postgres/bin/activate
+            pylint --rcfile .pylintrc --disable duplicate-code target_postgres/
+
+      - run:
+          name: 'Unit Tests'
+          command: |
+            . ./virtualenvs/target-postgres/bin/activate
+            export LOGGING_CONF_FILE=$(pwd)/sample_logging.conf
+            nosetests --where=tests/unit
+
+      - run:
+          name: 'Integration Tests'
+          command: |
+            . ./virtualenvs/target-postgres/bin/activate
+            export LOGGING_CONF_FILE=$(pwd)/sample_logging.conf
+            nosetests --where=tests/integration/
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build
