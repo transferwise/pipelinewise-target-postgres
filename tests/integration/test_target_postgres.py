@@ -62,9 +62,9 @@ class TestIntegration(unittest.TestCase):
                 self.assertFalse(md_c in r)
 
 
-    def assert_three_streams_are_into_postgres(self, should_metadata_columns_exist=False, should_hard_deleted_rows=False):
+    def assert_multiple_streams_are_into_postgres(self, should_metadata_columns_exist=False, should_hard_deleted_rows=False):
         """
-        This is a helper assertion that checks if every data from the message-with-three-streams.json
+        This is a helper assertion that checks if every data from the message-with-multiple-streams.json
         file is available in Postgres tables correctly.
         Useful to check different loading methods without duplicating assertions
         """
@@ -83,6 +83,7 @@ class TestIntegration(unittest.TestCase):
         table_one = postgres.query("SELECT * FROM {}.test_table_one ORDER BY c_pk".format(target_schema))
         table_two = postgres.query("SELECT * FROM {}.test_table_two ORDER BY c_pk".format(target_schema))
         table_three = postgres.query("SELECT * FROM {}.test_table_three ORDER BY c_pk".format(target_schema))
+        table_four = postgres.query("SELECT * FROM {}.test_table_four ORDER BY c_pk".format(target_schema))
 
 
         # ----------------------------------------------------------------------
@@ -132,16 +133,37 @@ class TestIntegration(unittest.TestCase):
             self.remove_metadata_columns_from_rows(table_three), expected_table_three)
 
         # ----------------------------------------------------------------------
+        # Check rows in table_four
+        # ----------------------------------------------------------------------
+        expected_table_four = []
+        if not should_hard_deleted_rows:
+            expected_table_four = [
+                    {'c_pk': 1, 'c_smallint': 1, 'c_integer': 1, 'c_bigint': 1, 'c_nobound_int': 1},
+                    {'c_pk': 2, 'c_smallint': 2, 'c_integer': 2, 'c_bigint': 2, 'c_nobound_int': 2},
+                    {'c_pk': 3, 'c_smallint': 3, 'c_integer': 3, 'c_bigint': 3, 'c_nobound_int': 3},
+            ]
+        else:
+            expected_table_four = [
+                    {'c_pk': 1, 'c_smallint': 1, 'c_integer': 1, 'c_bigint': 1, 'c_nobound_int': 1},
+                    {'c_pk': 2, 'c_smallint': 2, 'c_integer': 2, 'c_bigint': 2, 'c_nobound_int': 2},
+            ]
+
+        self.assertEqual(
+            self.remove_metadata_columns_from_rows(table_four), expected_table_four)
+
+        # ----------------------------------------------------------------------
         # Check if metadata columns exist or not
         # ----------------------------------------------------------------------
         if should_metadata_columns_exist:
             self.assert_metadata_columns_exist(table_one)
             self.assert_metadata_columns_exist(table_two)
             self.assert_metadata_columns_exist(table_three)
+            self.assert_metadata_columns_exist(table_four)
         else:
             self.assert_metadata_columns_not_exist(table_one)
             self.assert_metadata_columns_not_exist(table_two)
             self.assert_metadata_columns_not_exist(table_three)
+            self.assert_metadata_columns_exist(table_four)
 
 
     def test_invalid_json(self):
@@ -160,34 +182,34 @@ class TestIntegration(unittest.TestCase):
 
     def test_loading_tables(self):
         """Loading multiple tables from the same input tap with various columns types"""
-        tap_lines = test_utils.get_test_tap_lines('messages-with-three-streams.json')
+        tap_lines = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
         target_postgres.persist_lines(self.config, tap_lines)
 
-        self.assert_three_streams_are_into_postgres()
+        self.assert_multiple_streams_are_into_postgres()
 
 
     def test_loading_tables_with_metadata_columns(self):
         """Loading multiple tables from the same input tap with various columns types"""
-        tap_lines = test_utils.get_test_tap_lines('messages-with-three-streams.json')
+        tap_lines = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
 
         # Turning on adding metadata columns
         self.config['add_metadata_columns'] = True
         target_postgres.persist_lines(self.config, tap_lines)
 
         # Check if data loaded correctly and metadata columns exist
-        self.assert_three_streams_are_into_postgres(should_metadata_columns_exist=True)
+        self.assert_multiple_streams_are_into_postgres(should_metadata_columns_exist=True)
 
 
     def test_loading_tables_with_hard_delete(self):
         """Loading multiple tables from the same input tap with deleted rows"""
-        tap_lines = test_utils.get_test_tap_lines('messages-with-three-streams.json')
+        tap_lines = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
 
         # Turning on hard delete mode
         self.config['hard_delete'] = True
         target_postgres.persist_lines(self.config, tap_lines)
 
         # Check if data loaded correctly and metadata columns exist
-        self.assert_three_streams_are_into_postgres(
+        self.assert_multiple_streams_are_into_postgres(
             should_metadata_columns_exist=True,
             should_hard_deleted_rows=True
         )
@@ -201,7 +223,7 @@ class TestIntegration(unittest.TestCase):
         target_postgres.persist_lines(self.config, tap_lines)
 
         # Check if data loaded correctly
-        self.assert_three_streams_are_into_postgres(
+        self.assert_multiple_streams_are_into_postgres(
             should_metadata_columns_exist=False,
             should_hard_deleted_rows=False
         )
@@ -345,8 +367,8 @@ class TestIntegration(unittest.TestCase):
 
     def test_column_name_change(self):
         """Tests correct renaming of snowflake columns after source change"""
-        tap_lines_before_column_name_change = test_utils.get_test_tap_lines('messages-with-three-streams.json')
-        tap_lines_after_column_name_change = test_utils.get_test_tap_lines('messages-with-three-streams-modified-column.json')
+        tap_lines_before_column_name_change = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
+        tap_lines_after_column_name_change = test_utils.get_test_tap_lines('messages-with-multiple-streams-modified-column.json')
 
         # Load with default settings
         # Load with default settings
@@ -400,7 +422,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_schema_mapping(self):
         """Load stream into a specific schema, create indices and grant permissions"""
-        tap_lines = test_utils.get_test_tap_lines('messages-with-three-streams.json')
+        tap_lines = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
 
         # Turning on hard delete mode
         self.config['hard_delete'] = True
@@ -421,7 +443,7 @@ class TestIntegration(unittest.TestCase):
         target_postgres.persist_lines(self.config, tap_lines)
 
         # Check if data loaded correctly and metadata columns exist
-        self.assert_three_streams_are_into_postgres(
+        self.assert_multiple_streams_are_into_postgres(
             should_metadata_columns_exist=True,
             should_hard_deleted_rows=True
         )
@@ -429,7 +451,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_grant_privileges(self):
         """Tests GRANT USAGE and SELECT privileges on newly created tables"""
-        tap_lines = test_utils.get_test_tap_lines('messages-with-three-streams.json')
+        tap_lines = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
 
         # Create test users and groups
         postgres = DbSync(self.config)
