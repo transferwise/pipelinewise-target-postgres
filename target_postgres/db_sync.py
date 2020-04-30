@@ -56,10 +56,11 @@ def column_type(schema_property):
     elif 'integer' in property_type and 'string' in property_type:
         column_type = 'character varying'
     elif 'integer' in property_type:
-        print(f"column_type: {schema_property} -> 'numeric'")
         column_type = 'numeric'
     elif 'boolean' in property_type:
         column_type = 'boolean'
+
+    print(f"schema_property: {schema_property} -> column_type: {column_type}")
 
     return column_type
 
