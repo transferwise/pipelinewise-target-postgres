@@ -23,6 +23,13 @@ setup(name="pipelinewise-target-postgres",
           'inflection==0.3.1',
           'joblib==0.13.2'
       ],
+      extras_require={
+          "test": [
+              'nose==1.3.7',
+              'pylint==2.4.4',
+              'nose-cov==1.6'
+            ]
+      },
       entry_points="""
           [console_scripts]
           target-postgres=target_postgres:main

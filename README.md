@@ -95,8 +95,7 @@ Full list of options in `config.json`:
   python3 -m venv venv
   . venv/bin/activate
   pip install --upgrade pip
-  pip install .
-  pip install nose
+  pip install .[test]
 ```
 
 3. To run unit tests:
@@ -116,9 +115,8 @@ Full list of options in `config.json`:
   python3 -m venv venv
   . venv/bin/activate
   pip install --upgrade pip
-  pip install .
-  pip install pylint
-  pylint target_postgres -d C,W,unexpected-keyword-arg,duplicate-code
+  pip install .[test]
+  pylint --rcfile .pylintrc --disable duplicate-code target_postgres/
 ```
 
 ## License
