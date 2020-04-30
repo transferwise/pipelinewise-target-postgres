@@ -198,10 +198,11 @@ def persist_lines(config, lines):
     return state
 
 
+# pylint: disable=too-many-arguments
 def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=False, temp_dir=None):
     """Load a batch of records and do post load operations, like creating
     or deleting rows"""
-    #Load into snowflake
+    # Load into snowflake
     if row_count > 0:
         flush_records(stream, records_to_load, row_count, db_sync, temp_dir)
 
