@@ -309,9 +309,9 @@ class DbSync:
             return 'tmp_{}'.format(str(uuid.uuid4()).replace('-', '_'))
 
         if without_schema:
-            return '{}'.format(pg_table_name)
+            return f'"{pg_table_name.lower()}"'
 
-        return '{}.{}'.format(self.schema_name, pg_table_name)
+        return f'{self.schema_name}."{pg_table_name.lower()}"'
 
     def record_primary_key_string(self, record):
         if len(self.stream_schema_message['key_properties']) == 0:
@@ -454,7 +454,8 @@ class DbSync:
     def create_index(self, stream, column):
         table = self.table_name(stream)
         table_without_schema = self.table_name(stream, without_schema=True)
-        index_name = 'idx_{}_{}'.format(table_without_schema[:15], column.replace(',', '_'))
+        index_name = 'idx_{}_{}'.format(table_without_schema[:15].replace(' ', '').replace('"', ''),
+                                        column.replace(',', '_'))
         query = "CREATE INDEX IF NOT EXISTS {} ON {} ({})".format(index_name, table, column)
         LOGGER.info("Creating index on '%s' table on '%s' column(s)... %s", table, column, query)
         self.query(query)
@@ -500,7 +501,8 @@ class DbSync:
     def get_table_columns(self, table_name):
         return self.query("""SELECT column_name, data_type
       FROM information_schema.columns
-      WHERE lower(table_name) = %s AND lower(table_schema) = %s""", (table_name.lower(), self.schema_name.lower()))
+      WHERE lower(table_name) = %s AND lower(table_schema) = %s""", (table_name.replace("\"", "").lower(),
+                                                                     self.schema_name.lower()))
 
     def update_columns(self):
         stream_schema_message = self.stream_schema_message
@@ -545,7 +547,7 @@ class DbSync:
                                                                                column_name,
                                                                                column_name.replace("\"", ""),
                                                                                time.strftime("%Y%m%d_%H%M"))
-        LOGGER.info('Dropping column: %s', version_column)
+        LOGGER.info('Versioning column: %s', version_column)
         self.query(version_column)
 
     def add_column(self, column, stream):
@@ -557,7 +559,7 @@ class DbSync:
         stream_schema_message = self.stream_schema_message
         stream = stream_schema_message['stream']
         table_name = self.table_name(stream, without_schema=True)
-        found_tables = [table for table in (self.get_tables()) if table['table_name'].lower() == table_name]
+        found_tables = [table for table in (self.get_tables()) if f'"{table["table_name"].lower()}"' == table_name]
         if len(found_tables) == 0:
             query = self.create_table_query()
             LOGGER.info("Table '%s' does not exist. Creating... %s", table_name, query)
