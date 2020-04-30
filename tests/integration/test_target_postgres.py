@@ -162,6 +162,26 @@ class TestIntegration(unittest.TestCase):
             self.assert_metadata_columns_not_exist(table_three)
             self.assert_metadata_columns_not_exist(table_four)
 
+    def assert_binary_data_is_in_postgres(self, table_name, should_metadata_columns_exist=False):
+        # Redshift doesn't have binary type. Binary formatted singer values loaded into VARCHAR columns
+        # Get loaded rows from tables
+        snowflake = DbSync(self.config)
+        target_schema = self.config.get('default_target_schema', '')
+        table_one = snowflake.query('SELECT * FROM {}.{} ORDER BY "new"'.format(target_schema, table_name))
+
+        # ----------------------------------------------------------------------
+        # Check rows in table_one
+        # ----------------------------------------------------------------------
+        expected_table_one = [
+            {'new': '706b32', 'data': '6461746132', 'created_at': datetime.datetime(2019, 12, 17, 16, 2, 55)},
+            {'new': '706b34', 'data': '6461746134', 'created_at': datetime.datetime(2019, 12, 17, 16, 32, 22)},
+        ]
+
+        if should_metadata_columns_exist:
+            assert self.remove_metadata_columns_from_rows(table_one) == expected_table_one
+        else:
+            assert table_one == expected_table_one
+
     def test_invalid_json(self):
         """Receiving invalid JSONs should raise an exception"""
         tap_lines = test_utils.get_test_tap_lines('invalid-json.json')
@@ -217,6 +237,20 @@ class TestIntegration(unittest.TestCase):
         self.assert_multiple_streams_are_into_postgres(
             should_metadata_columns_exist=False,
             should_hard_deleted_rows=False
+        )
+
+    def test_loading_table_with_reserved_word_as_name_and_hard_delete(self):
+        """Loading a table where the name is a reserved word with deleted rows"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-reserved-name-as-table-name.json')
+
+        # Turning on hard delete mode
+        self.config['hard_delete'] = True
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # Check if data loaded correctly and metadata columns exist
+        self.assert_binary_data_is_in_postgres(
+            table_name='"order"',
+            should_metadata_columns_exist=True
         )
 
     def test_loading_unicode_characters(self):
@@ -368,7 +402,6 @@ class TestIntegration(unittest.TestCase):
         tap_lines_after_column_name_change = test_utils.get_test_tap_lines(
             'messages-with-multiple-streams-modified-column.json')
 
-        # Load with default settings
         # Load with default settings
         target_postgres.persist_lines(self.config, tap_lines_before_column_name_change)
         target_postgres.persist_lines(self.config, tap_lines_after_column_name_change)
