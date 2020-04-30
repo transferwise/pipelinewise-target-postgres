@@ -6,10 +6,12 @@ references:
       # Main Python container
       - image: circleci/python:3.6.2
         environment:
-          TAP_POSTGRES_PORT: 5432
-          TAP_POSTGRES_USER: test_user
-          TAP_POSTGRES_PASSWORD: my-secret-passwd
-          TAP_POSTGRES_HOST: test_postgres
+          TARGET_POSTGRES_HOST: test_postgres
+          TARGET_POSTGRES_PORT: 5432
+          TARGET_POSTGRES_USER: test_user
+          TARGET_POSTGRES_PASSWORD: my-secret-passwd
+          TARGET_POSTGRES_DBNAME: tap_postgres_test
+          TARGET_POSTGRES_SCHEMA: test_target_postgres
 
       # PostgreSQL service container image used as test source database
       - image: postgres:11.4
