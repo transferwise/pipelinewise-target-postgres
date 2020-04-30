@@ -497,3 +497,13 @@ class TestIntegration(unittest.TestCase):
         with assert_raises(Exception):
             self.config['default_target_schema_select_permissions'] = ['group_not_exists_1', 'group_not_exists_2']
             target_postgres.persist_lines(self.config, tap_lines)
+
+    def test_loading_tables_with_custom_temp_dir(self):
+        """Loading multiple tables from the same input tap using custom temp directory"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
+
+        # Setting custom temp_dir
+        self.config['temp_dir'] = '~/.pipelinewise/tmp'
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        self.assert_multiple_streams_are_into_postgres()

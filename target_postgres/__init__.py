@@ -5,10 +5,9 @@ import io
 import json
 import os
 import sys
-import tempfile
 from datetime import datetime
 from decimal import Decimal
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, mkstemp
 
 import singer
 from joblib import Parallel, delayed, parallel_backend
@@ -192,18 +191,20 @@ def persist_lines(config, lines):
             records_to_load=records_to_load[stream],
             row_count=row_count[stream],
             db_sync=stream_to_sync[stream],
-            delete_rows=config.get('hard_delete')
+            delete_rows=config.get('hard_delete'),
+            temp_dir=config.get('temp_dir')
         ) for stream in records_to_load.keys())
 
     return state
 
 
-def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=False):
+# pylint: disable=too-many-arguments
+def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=False, temp_dir=None):
     """Load a batch of records and do post load operations, like creating
     or deleting rows"""
-    #Load into snowflake
+    # Load into snowflake
     if row_count > 0:
-        flush_records(stream, records_to_load, row_count, db_sync)
+        flush_records(stream, records_to_load, row_count, db_sync, temp_dir)
 
     # Load finished, create indices if required
     db_sync.create_indices(stream)
@@ -214,9 +215,13 @@ def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=F
 
 
 # pylint: disable=unused-argument
-def flush_records(stream, records_to_load, row_count, db_sync):
+def flush_records(stream, records_to_load, row_count, db_sync, temp_dir=None):
     """Take a list of records and load into database"""
-    csv_fd, csv_file = tempfile.mkstemp()
+    if temp_dir:
+        temp_dir = os.path.expanduser(temp_dir)
+        os.makedirs(temp_dir, exist_ok=True)
+
+    csv_fd, csv_file = mkstemp(suffix='.csv', prefix=f'{stream}_', dir=temp_dir)
     with open(csv_fd, 'w+b') as f:
         for record in records_to_load.values():
             csv_line = db_sync.record_to_csv_line(record)
