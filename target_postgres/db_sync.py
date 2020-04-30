@@ -37,7 +37,6 @@ def validate_config(config):
 
 
 def column_type(schema_property):
-    print(schema_property)
     property_type = schema_property['type']
     property_format = schema_property['format'] if 'format' in schema_property else None
     column_type = 'character varying'
@@ -57,7 +56,7 @@ def column_type(schema_property):
     elif 'integer' in property_type and 'string' in property_type:
         column_type = 'character varying'
     elif 'integer' in property_type:
-        # import ipdb; ipdb.set_trace()
+        print(f"column_type: {schema_property} -> 'numeric'")
         column_type = 'numeric'
     elif 'boolean' in property_type:
         column_type = 'boolean'
