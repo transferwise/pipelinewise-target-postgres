@@ -1,4 +1,5 @@
 import json
+import sys
 import psycopg2
 import psycopg2.extras
 import singer
@@ -9,9 +10,10 @@ import uuid
 import itertools
 import time
 
-logger = singer.get_logger('target_postgres')
+LOGGER = singer.get_logger('target_postgres')
 
 
+# pylint: disable=missing-function-docstring,missing-class-docstring
 def validate_config(config):
     errors = []
     required_config_keys = [
@@ -36,41 +38,42 @@ def validate_config(config):
     return errors
 
 
+# pylint: disable=fixme
 def column_type(schema_property):
     property_type = schema_property['type']
     property_format = schema_property['format'] if 'format' in schema_property else None
-    column_type = 'character varying'
+    col_type = 'character varying'
     if 'object' in property_type or 'array' in property_type:
-        column_type = 'jsonb'
+        col_type = 'jsonb'
 
     # Every date-time JSON value is currently mapped to TIMESTAMP WITHOUT TIME ZONE
     #
     # TODO: Detect if timezone postfix exists in the JSON and find if TIMESTAMP WITHOUT TIME ZONE or
     # TIMESTAMP WITH TIME ZONE is the better column type
     elif property_format == 'date-time':
-        column_type = 'timestamp without time zone'
+        col_type = 'timestamp without time zone'
     elif property_format == 'time':
-        column_type = 'time without time zone'
+        col_type = 'time without time zone'
     elif 'number' in property_type:
-        column_type = 'double precision'
+        col_type = 'double precision'
     elif 'integer' in property_type and 'string' in property_type:
-        column_type = 'character varying'
+        col_type = 'character varying'
     elif 'integer' in property_type:
         if 'maximum' in schema_property:
             if schema_property['maximum'] <= 32767:
-                column_type = 'smallint'
+                col_type = 'smallint'
             elif schema_property['maximum'] <= 2147483647:
-                column_type = 'integer'
+                col_type = 'integer'
             elif schema_property['maximum'] <= 9223372036854775807:
-                column_type = 'bigint'
+                col_type = 'bigint'
         else:
-            column_type = 'numeric'
+            col_type = 'numeric'
     elif 'boolean' in property_type:
-        column_type = 'boolean'
+        col_type = 'boolean'
 
-    logger.debug("schema_property: %s -> column_type: %s", schema_property, column_type)
+    LOGGER.debug("schema_property: %s -> col_type: %s", schema_property, col_type)
 
-    return column_type
+    return col_type
 
 
 def safe_column_name(name):
@@ -83,7 +86,7 @@ def column_clause(name, schema_property):
 
 def flatten_key(k, parent_key, sep):
     full_key = parent_key + [k]
-    inflected_key = [n for n in full_key]
+    inflected_key = full_key.copy()
     reducer_index = 0
     while len(sep.join(inflected_key)) >= 63 and reducer_index < len(inflected_key):
         reduced_key = re.sub(r'[a-z]', '', inflection.camelize(inflected_key[reducer_index]))
@@ -94,6 +97,7 @@ def flatten_key(k, parent_key, sep):
     return sep.join(inflected_key)
 
 
+# pylint: disable=dangerous-default-value,invalid-name
 def flatten_schema(d, parent_key=[], sep='__', level=0, max_level=0):
     items = []
 
@@ -104,7 +108,7 @@ def flatten_schema(d, parent_key=[], sep='__', level=0, max_level=0):
         new_key = flatten_key(k, parent_key, sep)
         if 'type' in v.keys():
             if 'object' in v['type'] and 'properties' in v and level < max_level:
-                items.extend(flatten_schema(v, parent_key + [k], sep=sep, level=level+1, max_level=max_level).items())
+                items.extend(flatten_schema(v, parent_key + [k], sep=sep, level=level + 1, max_level=max_level).items())
             else:
                 items.append((new_key, v))
         else:
@@ -133,9 +137,9 @@ def flatten_record(d, parent_key=[], sep='__', level=0, max_level=0):
     for k, v in d.items():
         new_key = flatten_key(k, parent_key, sep)
         if isinstance(v, collections.MutableMapping) and level < max_level:
-            items.extend(flatten_record(v, parent_key + [k], sep=sep, level=level+1, max_level=max_level).items())
+            items.extend(flatten_record(v, parent_key + [k], sep=sep, level=level + 1, max_level=max_level).items())
         else:
-            items.append((new_key, json.dumps(v) if type(v) is list or type(v) is dict else v))
+            items.append((new_key, json.dumps(v) if isinstance(v, (dict, list)) else v))
     return dict(items)
 
 
@@ -194,8 +198,8 @@ class DbSync:
 
         # Exit if config has errors
         if len(config_errors) > 0:
-            logger.error("Invalid configuration:\n   * {}".format('\n   * '.join(config_errors)))
-            exit(1)
+            LOGGER.error("Invalid configuration:\n   * %s", '\n   * '.join(config_errors))
+            sys.exit(1)
 
         self.schema_name = None
         self.grantees = None
@@ -214,17 +218,16 @@ class DbSync:
             #  Target schema name can be defined in multiple ways:
             #
             #   1: 'default_target_schema' key  : Target schema is the same for every incoming stream if
-            #                                     not specified explicitly for a given stream in
-            #                                     the `schema_mapping` object
-            #   2: 'schema_mapping' key         : Target schema defined explicitly for a given stream.
-            #                                     Example config.json:
-            #                                           "schema_mapping": {
-            #                                               "my_tap_stream_id": {
-            #                                                   "target_schema": "my_postgres_schema",
-            #                                                   "target_schema_select_permissions": [ "role_with_select_privs" ],
-            #                                                   "indices": ["column_1", "column_2s"]
-            #                                               }
-            #                                           }
+            #       not specified explicitly for a given stream in the `schema_mapping` object
+            #   2: 'schema_mapping' key : Target schema defined explicitly for a given stream.
+            #       Example config.json:
+            #           "schema_mapping": {
+            #               "my_tap_stream_id": {
+            #                   "target_schema": "my_postgres_schema",
+            #                   "target_schema_select_permissions": [ "role_with_select_privs" ],
+            #                   "indices": ["column_1", "column_2s"]
+            #               }
+            #           }
             config_default_target_schema = self.connection_config.get('default_target_schema', '').strip()
             config_schema_mapping = self.connection_config.get('schema_mapping', {})
 
@@ -243,31 +246,34 @@ class DbSync:
                 self.schema_name = config_default_target_schema
 
             if not self.schema_name:
-                raise Exception("Target schema name not defined in config. Neither 'default_target_schema' (string) nor 'schema_mapping' (object) defines target schema for {} stream.".format(stream_name))
+                raise Exception("Target schema name not defined in config. Neither 'default_target_schema' (string)"
+                                "nor 'schema_mapping' (object) defines target schema for {} stream."
+                                .format(stream_name))
 
             #  Define grantees
             #  ---------------
             #  Grantees can be defined in multiple ways:
             #
-            #   1: 'default_target_schema_select_permissions' key  : USAGE and SELECT privileges will be granted on every table to a given role
-            #                                                       for every incoming stream if not specified explicitly
-            #                                                       in the `schema_mapping` object
-            #   2: 'target_schema_select_permissions' key          : Roles to grant USAGE and SELECT privileges defined explicitly
-            #                                                       for a given stream.
-            #                                                       Example config.json:
-            #                                                           "schema_mapping": {
-            #                                                               "my_tap_stream_id": {
-            #                                                                   "target_schema": "my_postgres_schema",
-            #                                                                   "target_schema_select_permissions": [ "role_with_select_privs" ]
-            #                                                               }
-            #                                                           }
+            #   1: 'default_target_schema_select_permissions' key  : USAGE and SELECT privileges will be granted on
+            #       every table to a given role for every incoming stream if not specified explicitly in the
+            #       `schema_mapping` object
+            #   2: 'target_schema_select_permissions' key : Roles to grant USAGE and SELECT privileges defined
+            #       explicitly for a given stream.
+            #           Example config.json:
+            #               "schema_mapping": {
+            #                   "my_tap_stream_id": {
+            #                       "target_schema": "my_postgres_schema",
+            #                       "target_schema_select_permissions": [ "role_with_select_privs" ]
+            #                   }
+            #               }
             self.grantees = self.connection_config.get('default_target_schema_select_permissions')
             if config_schema_mapping and stream_schema_name in config_schema_mapping:
-                self.grantees = config_schema_mapping[stream_schema_name].get('target_schema_select_permissions', self.grantees)
+                self.grantees = config_schema_mapping[stream_schema_name].get('target_schema_select_permissions',
+                                                                              self.grantees)
 
             self.data_flattening_max_level = self.connection_config.get('data_flattening_max_level', 0)
-            self.flatten_schema = flatten_schema(stream_schema_message['schema'], max_level=self.data_flattening_max_level)
-
+            self.flatten_schema = flatten_schema(stream_schema_message['schema'],
+                                                 max_level=self.data_flattening_max_level)
 
     def open_connection(self):
         conn_string = "host='{}' dbname='{}' user='{}' password='{}' port='{}'".format(
@@ -281,7 +287,7 @@ class DbSync:
         return psycopg2.connect(conn_string)
 
     def query(self, query, params=None):
-        logger.info("TARGET_POSTGRES - Running query: {}".format(query))
+        LOGGER.debug("Running query: %s", query)
         with self.open_connection() as connection:
             with connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(
@@ -314,7 +320,9 @@ class DbSync:
         try:
             key_props = [str(flatten[p]) for p in self.stream_schema_message['key_properties']]
         except Exception as exc:
-            logger.info("Cannot find {} primary key(s) in record: {}".format(self.stream_schema_message['key_properties'], flatten))
+            LOGGER.info("Cannot find %s primary key(s) in record: %s",
+                        self.stream_schema_message['key_properties'],
+                        flatten)
             raise exc
         return ','.join(key_props)
 
@@ -322,7 +330,8 @@ class DbSync:
         flatten = flatten_record(record, max_level=self.data_flattening_max_level)
         return ','.join(
             [
-                json.dumps(flatten[name], ensure_ascii=False) if name in flatten and (flatten[name] == 0 or flatten[name]) else ''
+                json.dumps(flatten[name], ensure_ascii=False)
+                if name in flatten and (flatten[name] == 0 or flatten[name]) else ''
                 for name in self.flatten_schema
             ]
         )
@@ -330,7 +339,7 @@ class DbSync:
     def load_csv(self, file, count):
         stream_schema_message = self.stream_schema_message
         stream = stream_schema_message['stream']
-        logger.info("Loading {} rows into '{}'".format(count, self.table_name(stream, False)))
+        LOGGER.info("Loading %d rows into '%s'", count, self.table_name(stream, False))
 
         with self.open_connection() as connection:
             with connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -341,17 +350,18 @@ class DbSync:
                     temp_table,
                     ', '.join(self.column_names())
                 )
-                logger.info(copy_sql)
+                LOGGER.info(copy_sql)
                 cur.copy_expert(
                     copy_sql,
                     file
                 )
                 if len(self.stream_schema_message['key_properties']) > 0:
                     cur.execute(self.update_from_temp_table(temp_table))
-                    logger.info(cur.statusmessage)
+                    LOGGER.info(cur.statusmessage)
                 cur.execute(self.insert_from_temp_table(temp_table))
-                logger.info(cur.statusmessage)
+                LOGGER.info(cur.statusmessage)
 
+    # pylint: disable=duplicate-string-formatting-argument
     def insert_from_temp_table(self, temp_table):
         stream_schema_message = self.stream_schema_message
         columns = self.column_names()
@@ -360,22 +370,18 @@ class DbSync:
         if len(stream_schema_message['key_properties']) == 0:
             return """INSERT INTO {} ({})
                     (SELECT s.* FROM {} s)
-                    """.format(
-                table,
-                ', '.join(columns),
-                temp_table
-            )
+                    """.format(table,
+                               ', '.join(columns),
+                               temp_table)
 
         return """INSERT INTO {} ({})
         (SELECT s.* FROM {} s LEFT OUTER JOIN {} t ON {} WHERE {})
-        """.format(
-            table,
-            ', '.join(columns),
-            temp_table,
-            table,
-            self.primary_key_condition('t'),
-            self.primary_key_null_condition('t')
-        )
+        """.format(table,
+                   ', '.join(columns),
+                   temp_table,
+                   table,
+                   self.primary_key_condition('t'),
+                   self.primary_key_null_condition('t'))
 
     def update_from_temp_table(self, temp_table):
         stream_schema_message = self.stream_schema_message
@@ -384,12 +390,10 @@ class DbSync:
 
         return """UPDATE {} SET {} FROM {} s
         WHERE {}
-        """.format(
-            table,
-            ', '.join(['{}=s.{}'.format(c, c) for c in columns]),
-            temp_table,
-            self.primary_key_condition(table)
-        )
+        """.format(table,
+                   ', '.join(['{}=s.{}'.format(c, c) for c in columns]),
+                   temp_table,
+                   self.primary_key_condition(table))
 
     def primary_key_condition(self, right_table):
         stream_schema_message = self.stream_schema_message
@@ -415,7 +419,7 @@ class DbSync:
         ]
 
         primary_key = ["PRIMARY KEY ({})".format(', '.join(primary_column_names(stream_schema_message)))] \
-            if len(stream_schema_message['key_properties']) else []
+            if len(stream_schema_message['key_properties']) > 0 else []
 
         if not table_name:
             gen_table_name = self.table_name(stream_schema_message['stream'], is_temporary=is_temporary)
@@ -428,16 +432,19 @@ class DbSync:
 
     def grant_usage_on_schema(self, schema_name, grantee):
         query = "GRANT USAGE ON SCHEMA {} TO GROUP {}".format(schema_name, grantee)
-        logger.info("Granting USAGE privilegue on '{}' schema to '{}'... {}".format(schema_name, grantee, query))
+        LOGGER.info("Granting USAGE privilege on '%s' schema to '%s'... %s", schema_name, grantee, query)
         self.query(query)
 
     def grant_select_on_all_tables_in_schema(self, schema_name, grantee):
         query = "GRANT SELECT ON ALL TABLES IN SCHEMA {} TO GROUP {}".format(schema_name, grantee)
-        logger.info("Granting SELECT ON ALL TABLES privilegue on '{}' schema to '{}'... {}".format(schema_name, grantee, query))
+        LOGGER.info("Granting SELECT ON ALL TABLES privilege on '%s' schema to '%s'... %s",
+                    schema_name,
+                    grantee,
+                    query)
         self.query(query)
 
     @classmethod
-    def grant_privilege(self, schema, grantees, grant_method):
+    def grant_privilege(cls, schema, grantees, grant_method):
         if isinstance(grantees, list):
             for grantee in grantees:
                 grant_method(schema, grantee)
@@ -449,7 +456,7 @@ class DbSync:
         table_without_schema = self.table_name(stream, without_schema=True)
         index_name = 'idx_{}_{}'.format(table_without_schema[:15], column.replace(',', '_'))
         query = "CREATE INDEX IF NOT EXISTS {} ON {} ({})".format(index_name, table, column)
-        logger.info("Creating index on '{}' table on '{}' column(s)... {}".format(table, column, query))
+        LOGGER.info("Creating index on '%s' table on '%s' column(s)... %s", table, column, query)
         self.query(query)
 
     def create_indices(self, stream):
@@ -460,8 +467,8 @@ class DbSync:
     def delete_rows(self, stream):
         table = self.table_name(stream)
         query = "DELETE FROM {} WHERE _sdc_deleted_at IS NOT NULL RETURNING _sdc_deleted_at".format(table)
-        logger.info("Deleting rows from '{}' table... {}".format(table, query))
-        logger.info("DELETE {}".format(len(self.query(query))))
+        LOGGER.info("Deleting rows from '%s' table... %s", table, query)
+        LOGGER.info("DELETE %s", len(self.query(query)))
 
     def create_schema_if_not_exists(self, table_columns_cache=None):
         schema_name = self.schema_name
@@ -479,7 +486,7 @@ class DbSync:
 
         if len(schema_rows) == 0:
             query = "CREATE SCHEMA IF NOT EXISTS {}".format(schema_name)
-            logger.info("Schema '{}' does not exist. Creating... {}".format(schema_name, query))
+            LOGGER.info("Schema '%s' does not exist. Creating... %s", schema_name, query)
             self.query(query)
 
             self.grant_privilege(schema_name, self.grantees, self.grant_usage_on_schema)
@@ -521,27 +528,29 @@ class DbSync:
             ))
             for (name, properties_schema) in self.flatten_schema.items()
             if name.lower() in columns_dict and
-               columns_dict[name.lower()]['data_type'].lower() != column_type(properties_schema).lower()
+            columns_dict[name.lower()]['data_type'].lower() != column_type(properties_schema).lower()
         ]
 
         for (column_name, column) in columns_to_replace:
             self.version_column(column_name, stream)
             self.add_column(column, stream)
 
-
     def drop_column(self, column_name, stream):
         drop_column = "ALTER TABLE {} DROP COLUMN {}".format(self.table_name(stream), column_name)
-        logger.info('Dropping column: {}'.format(drop_column))
+        LOGGER.info('Dropping column: %s', drop_column)
         self.query(drop_column)
 
     def version_column(self, column_name, stream):
-        version_column = "ALTER TABLE {} RENAME COLUMN {} TO \"{}_{}\"".format(self.table_name(stream, False), column_name, column_name.replace("\"",""), time.strftime("%Y%m%d_%H%M"))
-        logger.info('Dropping column: {}'.format(version_column))
+        version_column = "ALTER TABLE {} RENAME COLUMN {} TO \"{}_{}\"".format(self.table_name(stream, False),
+                                                                               column_name,
+                                                                               column_name.replace("\"", ""),
+                                                                               time.strftime("%Y%m%d_%H%M"))
+        LOGGER.info('Dropping column: %s', version_column)
         self.query(version_column)
 
     def add_column(self, column, stream):
         add_column = "ALTER TABLE {} ADD COLUMN {}".format(self.table_name(stream), column)
-        logger.info('Adding column: {}'.format(add_column))
+        LOGGER.info('Adding column: %s', add_column)
         self.query(add_column)
 
     def sync_table(self):
@@ -551,11 +560,10 @@ class DbSync:
         found_tables = [table for table in (self.get_tables()) if table['table_name'].lower() == table_name]
         if len(found_tables) == 0:
             query = self.create_table_query()
-            logger.info("Table '{}' does not exist. Creating... {}".format(table_name, query))
+            LOGGER.info("Table '%s' does not exist. Creating... %s", table_name, query)
             self.query(query)
 
             self.grant_privilege(self.schema_name, self.grantees, self.grant_select_on_all_tables_in_schema)
         else:
-            logger.info("Table '{}' exists".format(table_name))
+            LOGGER.info("Table '%s' exists", table_name)
             self.update_columns()
-
