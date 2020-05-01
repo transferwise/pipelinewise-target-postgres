@@ -11,7 +11,7 @@ def get_db_config():
     # The following values needs to be defined in environment variables with
     # valid details to a Postgres instace
     # --------------------------------------------------------------------------
-    # Snowflake instance
+    # Postgres instance
     config['host'] = os.environ.get('TARGET_POSTGRES_HOST')
     config['port'] = os.environ.get('TARGET_POSTGRES_PORT')
     config['user'] = os.environ.get('TARGET_POSTGRES_USER')

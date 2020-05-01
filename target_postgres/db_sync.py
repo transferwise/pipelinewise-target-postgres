@@ -194,12 +194,12 @@ class DbSync:
                                     name and the JSON schema that will be used to
                                     validate every RECORDS messages that comes from the stream.
                                     Schema validation happening before creating CSV and before
-                                    uploading data into Snowflake.
+                                    uploading data into Postgres.
 
-                                    If stream_schema_message is not defined that we can use
+                                    If stream_schema_message is not defined then we can use
                                     the DbSync instance as a generic purpose connection to
-                                    Snowflake and can run individual queries. For example
-                                    collecting catalog informations from Snowflake for caching
+                                    Postgres and can run individual queries. For example
+                                    collecting catalog information from Postgres for caching
                                     purposes.
         """
         self.connection_config = connection_config

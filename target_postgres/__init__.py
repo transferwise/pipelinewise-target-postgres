@@ -203,7 +203,7 @@ def persist_lines(config, lines) -> None:
             # If you want to load tables with no Primary Key:
             #  1) Set ` 'primary_key_required': false ` in the target-postgres config.json
             #  or
-            #  2) Use fastsync [postgres-to-snowflake, mysql-to-snowflake, etc.]
+            #  2) Use fastsync [postgres-to-postgres, mysql-to-postgres, etc.]
             if config.get('primary_key_required', True) and len(o['key_properties']) == 0:
                 LOGGER.critical("Primary key is set to mandatory but not defined in the [%s] stream", stream)
                 raise Exception("key_properties field is required")
@@ -255,7 +255,7 @@ def flush_streams(
     Flushes all buckets and resets records count to 0 as well as empties records to load list
     :param streams: dictionary with records to load per stream
     :param row_count: dictionary with row count per stream
-    :param stream_to_sync: Snowflake db sync instance per stream
+    :param stream_to_sync: Postgres db sync instance per stream
     :param config: dictionary containing the configuration
     :param state: dictionary containing the original state from tap
     :param flushed_state: dictionary containing updated states only when streams got flushed
@@ -320,7 +320,7 @@ def flush_streams(
 def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=False, temp_dir=None):
     """Load a batch of records and do post load operations, like creating
     or deleting rows"""
-    # Load into snowflake
+    # Load into Postgres
     if row_count[stream] > 0:
         flush_records(stream, records_to_load, row_count[stream], db_sync, temp_dir)
 
