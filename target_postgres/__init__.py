@@ -5,6 +5,7 @@ import io
 import json
 import os
 import sys
+import copy
 from datetime import datetime
 from decimal import Decimal
 from tempfile import NamedTemporaryFile, mkstemp
@@ -16,6 +17,10 @@ from singer import get_logger
 from target_postgres.db_sync import DbSync
 
 LOGGER = get_logger('target_postgres')
+
+DEFAULT_BATCH_SIZE_ROWS = 100000
+DEFAULT_PARALLELISM = 0  # 0 The number of threads used to flush tables
+DEFAULT_MAX_PARALLELISM = 16  # Don't use more than this number of threads by default when flushing streams in parallel
 
 
 class RecordValidationException(Exception):
@@ -77,17 +82,19 @@ def emit_state(state):
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements,invalid-name,consider-iterating-dictionary
-def persist_lines(config, lines):
+def persist_lines(config, lines) -> None:
     """Read singer messages and process them line by line"""
     state = None
+    flushed_state = None
     schemas = {}
     key_properties = {}
     validators = {}
     records_to_load = {}
-    csv_files_to_load = {}
     row_count = {}
     stream_to_sync = {}
-    batch_size_rows = config.get('batch_size_rows', 100000)
+    total_row_count = {}
+    batch_size_rows = config.get('batch_size_rows', DEFAULT_BATCH_SIZE_ROWS)
+    parallelism = config.get("parallelism", -1)
 
     # Loop over lines from stdin
     for line in lines:
@@ -125,11 +132,17 @@ def persist_lines(config, lines):
 
             primary_key_string = stream_to_sync[stream].record_primary_key_string(o['record'])
             if not primary_key_string:
-                primary_key_string = 'RID-{}'.format(row_count[stream])
+                primary_key_string = 'RID-{}'.format(total_row_count[stream])
 
             if stream not in records_to_load:
                 records_to_load[stream] = {}
 
+            # increment row count only when a new PK is encountered in the current batch
+            if primary_key_string not in records_to_load[stream]:
+                row_count[stream] += 1
+                total_row_count[stream] += 1
+
+            # append record
             if config.get('add_metadata_columns') or config.get('hard_delete'):
                 records_to_load[stream][primary_key_string] = add_metadata_values_to_record(o)
             else:
@@ -138,14 +151,32 @@ def persist_lines(config, lines):
             row_count[stream] = len(records_to_load[stream])
 
             if row_count[stream] >= batch_size_rows:
-                flush_records(stream, records_to_load[stream], row_count[stream], stream_to_sync[stream])
-                row_count[stream] = 0
-                records_to_load[stream] = {}
+                # flush all streams, delete records if needed, reset counts and then emit current state
+                if config.get('flush_all_streams'):
+                    filter_streams = None
+                else:
+                    filter_streams = [stream]
 
-            state = None
+                # Flush and return a new state dict with new positions only for the flushed streams
+                flushed_state = flush_streams(records_to_load,
+                                              row_count,
+                                              stream_to_sync,
+                                              config,
+                                              state,
+                                              flushed_state,
+                                              filter_streams=filter_streams)
+
+                # emit last encountered state
+                emit_state(copy.deepcopy(flushed_state))
+
         elif t == 'STATE':
             LOGGER.debug('Setting state to %s', o['value'])
             state = o['value']
+
+            # Initially set flushed state
+            if not flushed_state:
+                flushed_state = copy.deepcopy(state)
+
         elif t == 'SCHEMA':
             if 'stream' not in o:
                 raise Exception("Line is missing required key 'stream': {}".format(line))
@@ -156,7 +187,10 @@ def persist_lines(config, lines):
 
             # flush records from previous stream SCHEMA
             if row_count.get(stream, 0) > 0:
-                flush_records(stream, records_to_load[stream], row_count[stream], stream_to_sync[stream])
+                flushed_state = flush_streams(records_to_load, row_count, stream_to_sync, config, state, flushed_state)
+
+                # emit latest encountered state
+                emit_state(flushed_state)
 
             # key_properties key must be available in the SCHEMA message.
             if 'key_properties' not in o:
@@ -183,27 +217,103 @@ def persist_lines(config, lines):
 
             stream_to_sync[stream].create_schema_if_not_exists()
             stream_to_sync[stream].sync_table()
+
             row_count[stream] = 0
-            csv_files_to_load[stream] = NamedTemporaryFile(mode='w+b')
+            total_row_count[stream] = 0
+
         elif t == 'ACTIVATE_VERSION':
             LOGGER.debug('ACTIVATE_VERSION message')
+
+            # Initially set flushed state
+            if not flushed_state:
+                flushed_state = copy.deepcopy(state)
+
         else:
             raise Exception("Unknown message type {} in message {}"
                             .format(o['type'], o))
 
+    # if some bucket has records that need to be flushed but haven't reached batch size
+    # then flush all buckets.
+    if sum(row_count.values()) > 0:
+        # flush all streams one last time, delete records if needed, reset counts and then emit current state
+        flushed_state = flush_streams(records_to_load, row_count, stream_to_sync, config, state, flushed_state)
+
+    # emit latest state
+    emit_state(copy.deepcopy(flushed_state))
+
+
+# pylint: disable=too-many-arguments
+def flush_streams(
+        streams,
+        row_count,
+        stream_to_sync,
+        config,
+        state,
+        flushed_state,
+        filter_streams=None):
+    """
+    Flushes all buckets and resets records count to 0 as well as empties records to load list
+    :param streams: dictionary with records to load per stream
+    :param row_count: dictionary with row count per stream
+    :param stream_to_sync: Snowflake db sync instance per stream
+    :param config: dictionary containing the configuration
+    :param state: dictionary containing the original state from tap
+    :param flushed_state: dictionary containing updated states only when streams got flushed
+    :param filter_streams: Keys of streams to flush from the streams dict. Default is every stream
+    :return: State dict with flushed positions
+    """
+    parallelism = config.get("parallelism", DEFAULT_PARALLELISM)
+    max_parallelism = config.get("max_parallelism", DEFAULT_MAX_PARALLELISM)
+
+    # Parallelism 0 means auto parallelism:
+    #
+    # Auto parallelism trying to flush streams efficiently with auto defined number
+    # of threads where the number of threads is the number of streams that need to
+    # be loaded but it's not greater than the value of max_parallelism
+    if parallelism == 0:
+        n_streams_to_flush = len(streams.keys())
+        if n_streams_to_flush > max_parallelism:
+            parallelism = max_parallelism
+        else:
+            parallelism = n_streams_to_flush
+
+    # Select the required streams to flush
+    if filter_streams:
+        streams_to_flush = filter_streams
+    else:
+        streams_to_flush = streams.keys()
 
     # Single-host, thread-based parallelism
-    with parallel_backend('threading', n_jobs=-1):
+    with parallel_backend('threading', n_jobs=parallelism):
         Parallel()(delayed(load_stream_batch)(
             stream=stream,
-            records_to_load=records_to_load[stream],
-            row_count=row_count[stream],
+            records_to_load=streams[stream],
+            row_count=row_count,
             db_sync=stream_to_sync[stream],
             delete_rows=config.get('hard_delete'),
             temp_dir=config.get('temp_dir')
-        ) for stream in records_to_load.keys())
+        ) for stream in streams_to_flush)
 
-    return state
+    # reset flushed stream records to empty to avoid flushing same records
+    for stream in streams_to_flush:
+        streams[stream] = {}
+
+        # Update flushed streams
+        if filter_streams:
+            # update flushed_state position if we have state information for the stream
+            if state is not None and stream in state.get('bookmarks', {}):
+                # Create bookmark key if not exists
+                if 'bookmarks' not in flushed_state:
+                    flushed_state['bookmarks'] = {}
+                # Copy the stream bookmark from the latest state
+                flushed_state['bookmarks'][stream] = copy.deepcopy(state['bookmarks'][stream])
+
+        # If we flush every bucket use the latest state
+        else:
+            flushed_state = copy.deepcopy(state)
+
+    # Return with state message with flushed positions
+    return flushed_state
 
 
 # pylint: disable=too-many-arguments
@@ -211,8 +321,8 @@ def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=F
     """Load a batch of records and do post load operations, like creating
     or deleting rows"""
     # Load into snowflake
-    if row_count > 0:
-        flush_records(stream, records_to_load, row_count, db_sync, temp_dir)
+    if row_count[stream] > 0:
+        flush_records(stream, records_to_load, row_count[stream], db_sync, temp_dir)
 
     # Load finished, create indices if required
     db_sync.create_indices(stream)
@@ -220,6 +330,9 @@ def load_stream_batch(stream, records_to_load, row_count, db_sync, delete_rows=F
     # Delete soft-deleted, flagged rows - where _sdc_deleted at is not null
     if delete_rows:
         db_sync.delete_rows(stream)
+
+    # reset row count for the current stream
+    row_count[stream] = 0
 
 
 # pylint: disable=unused-argument
@@ -257,9 +370,8 @@ def main():
 
     # Consume singer messages
     singer_messages = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
-    state = persist_lines(config, singer_messages)
+    persist_lines(config, singer_messages)
 
-    emit_state(state)
     LOGGER.debug("Exiting normally")
 
 

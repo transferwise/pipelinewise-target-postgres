@@ -1,6 +1,7 @@
 import unittest
 import os
 import json
+import mock
 import datetime
 import target_postgres
 from target_postgres import RecordValidationException
@@ -29,6 +30,7 @@ class TestIntegration(unittest.TestCase):
     @classmethod
     def setUp(cls):
         cls.config = test_utils.get_test_config()
+        cls.maxDiff = None
         postgres = DbSync(cls.config)
         if cls.config['default_target_schema']:
             postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(cls.config['default_target_schema']))
@@ -164,12 +166,100 @@ class TestIntegration(unittest.TestCase):
             self.assert_metadata_columns_not_exist(table_three)
             self.assert_metadata_columns_not_exist(table_four)
 
+    def assert_logical_streams_are_in_postgres(self, should_metadata_columns_exist=False):
+        # Get loaded rows from tables
+        postgres = DbSync(self.config)
+        target_schema = self.config.get('default_target_schema', '')
+        table_one = postgres.query("SELECT * FROM {}.logical1_table1 ORDER BY cid".format(target_schema))
+        table_two = postgres.query("SELECT * FROM {}.logical1_table2 ORDER BY cid".format(target_schema))
+        table_three = postgres.query("SELECT * FROM {}.logical2_table1 ORDER BY cid".format(target_schema))
+        table_four = postgres.query("SELECT cid, ctimentz, ctimetz FROM {}.logical1_edgydata WHERE CID IN(1,2,3,4,5,6,8,9) ORDER BY cid".format(target_schema))
+
+        # ----------------------------------------------------------------------
+        # Check rows in table_one
+        # ----------------------------------------------------------------------
+        expected_table_one = [
+            {'cid': 1, 'cvarchar': "inserted row", 'cvarchar2': None},
+            {'cid': 2, 'cvarchar': 'inserted row', "cvarchar2": "inserted row"},
+            {'cid': 3, 'cvarchar': "inserted row", 'cvarchar2': "inserted row"},
+            {'cid': 4, 'cvarchar': "inserted row", 'cvarchar2': "inserted row"}
+        ]
+
+        # ----------------------------------------------------------------------
+        # Check rows in table_tow
+        # ----------------------------------------------------------------------
+        expected_table_two = [
+            {'cid': 1, 'cvarchar': "updated row"},
+            {'cid': 2, 'cvarchar': 'updated row'},
+            {'cid': 3, 'cvarchar': "updated row"},
+            {'cid': 5, 'cvarchar': "updated row"},
+            {'cid': 7, 'cvarchar': "updated row"},
+            {'cid': 8, 'cvarchar': 'updated row'},
+            {'cid': 9, 'cvarchar': "updated row"},
+            {'cid': 10, 'cvarchar': 'updated row'}
+        ]
+
+        # ----------------------------------------------------------------------
+        # Check rows in table_three
+        # ----------------------------------------------------------------------
+        expected_table_three = [
+            {'cid': 1, 'cvarchar': "updated row"},
+            {'cid': 2, 'cvarchar': 'updated row'},
+            {'cid': 3, 'cvarchar': "updated row"},
+        ]
+
+        # ----------------------------------------------------------------------
+        # Check rows in table_four
+        # ----------------------------------------------------------------------
+        expected_table_four = [
+            {'cid': 1, 'ctimentz': None, 'ctimetz': None},
+            {'cid': 2, 'ctimentz': datetime.time(23, 0, 15), 'ctimetz': datetime.time(23, 0, 15)},
+            {'cid': 3, 'ctimentz': datetime.time(12, 0, 15), 'ctimetz': datetime.time(12, 0, 15)},
+            {'cid': 4, 'ctimentz': datetime.time(12, 0, 15), 'ctimetz': datetime.time(9, 0, 15)},
+            {'cid': 5, 'ctimentz': datetime.time(12, 0, 15), 'ctimetz': datetime.time(15, 0, 15)},
+            {'cid': 6, 'ctimentz': datetime.time(0, 0), 'ctimetz': datetime.time(0, 0)},
+            {'cid': 8, 'ctimentz': datetime.time(0, 0), 'ctimetz': datetime.time(1, 0)},
+            {'cid': 9, 'ctimentz': datetime.time(0, 0), 'ctimetz': datetime.time(0, 0)}
+        ]
+
+        # Check if metadata columns replicated correctly
+        if should_metadata_columns_exist:
+            self.assert_metadata_columns_exist(table_one)
+            self.assert_metadata_columns_exist(table_two)
+            self.assert_metadata_columns_exist(table_three)
+            self.assert_metadata_columns_not_exist(table_four)
+        else:
+            self.assert_metadata_columns_not_exist(table_one)
+            self.assert_metadata_columns_not_exist(table_two)
+            self.assert_metadata_columns_not_exist(table_three)
+            self.assert_metadata_columns_not_exist(table_four)
+
+        # Check if data replicated correctly
+        assert self.remove_metadata_columns_from_rows(table_one) == expected_table_one
+        assert self.remove_metadata_columns_from_rows(table_two) == expected_table_two
+        assert self.remove_metadata_columns_from_rows(table_three) == expected_table_three
+        assert self.remove_metadata_columns_from_rows(table_four) == expected_table_four
+
+    def assert_logical_streams_are_in_postgres_and_are_empty(self):
+        # Get loaded rows from tables
+        postgres = DbSync(self.config)
+        target_schema = self.config.get('default_target_schema', '')
+        table_one = postgres.query("SELECT * FROM {}.logical1_table1 ORDER BY CID".format(target_schema))
+        table_two = postgres.query("SELECT * FROM {}.logical1_table2 ORDER BY CID".format(target_schema))
+        table_three = postgres.query("SELECT * FROM {}.logical2_table1 ORDER BY CID".format(target_schema))
+        table_four = postgres.query("SELECT * FROM {}.logical1_edgydata WHERE cid IN(1,2,3,4,5,6,8,9) ORDER BY cid".format(target_schema))
+
+        self.assertEqual(table_one, [])
+        self.assertEqual(table_two, [])
+        self.assertEqual(table_three, [])
+        self.assertEqual(table_four, [])
+
     def assert_binary_data_is_in_postgres(self, table_name, should_metadata_columns_exist=False):
         # Redshift doesn't have binary type. Binary formatted singer values loaded into VARCHAR columns
         # Get loaded rows from tables
-        snowflake = DbSync(self.config)
+        postgres = DbSync(self.config)
         target_schema = self.config.get('default_target_schema', '')
-        table_one = snowflake.query('SELECT * FROM {}.{} ORDER BY "new"'.format(target_schema, table_name))
+        table_one = postgres.query('SELECT * FROM {}.{} ORDER BY "new"'.format(target_schema, table_name))
 
         # ----------------------------------------------------------------------
         # Check rows in table_one
@@ -213,6 +303,16 @@ class TestIntegration(unittest.TestCase):
 
         # Check if data loaded correctly and metadata columns exist
         self.assert_multiple_streams_are_into_postgres(should_metadata_columns_exist=True)
+
+    def test_loading_tables_with_defined_parallelism(self):
+        """Loading multiple tables from the same input tap with various columns types"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
+
+        # Turning on adding metadata columns
+        self.config['parallelism'] = 1
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        self.assert_multiple_streams_are_into_postgres()
 
     def test_loading_tables_with_hard_delete(self):
         """Loading multiple tables from the same input tap with deleted rows"""
@@ -413,7 +513,7 @@ class TestIntegration(unittest.TestCase):
             }])
 
     def test_column_name_change(self):
-        """Tests correct renaming of snowflake columns after source change"""
+        """Tests correct renaming of postgres columns after source change"""
         tap_lines_before_column_name_change = test_utils.get_test_tap_lines('messages-with-multiple-streams.json')
         tap_lines_after_column_name_change = test_utils.get_test_tap_lines(
             'messages-with-multiple-streams-modified-column.json')
@@ -546,6 +646,215 @@ class TestIntegration(unittest.TestCase):
         with assert_raises(Exception):
             self.config['default_target_schema_select_permissions'] = ['group_not_exists_1', 'group_not_exists_2']
             target_postgres.persist_lines(self.config, tap_lines)
+
+    def test_logical_streams_from_pg_with_hard_delete_and_default_batch_size_should_pass(self):
+        """Tests logical streams from pg with inserts, updates and deletes"""
+        tap_lines = test_utils.get_test_tap_lines('messages-pg-logical-streams.json')
+
+        # Turning on hard delete mode
+        self.config['hard_delete'] = True
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        self.assert_logical_streams_are_in_postgres(True)
+
+    def test_logical_streams_from_pg_with_hard_delete_and_batch_size_of_5_should_pass(self):
+        """Tests logical streams from pg with inserts, updates and deletes"""
+        tap_lines = test_utils.get_test_tap_lines('messages-pg-logical-streams.json')
+
+        # Turning on hard delete mode
+        self.config['hard_delete'] = True
+        self.config['batch_size_rows'] = 5
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        self.assert_logical_streams_are_in_postgres(True)
+
+    def test_logical_streams_from_pg_with_hard_delete_and_batch_size_of_5_and_no_records_should_pass(self):
+        """Tests logical streams from pg with inserts, updates and deletes"""
+        tap_lines = test_utils.get_test_tap_lines('messages-pg-logical-streams-no-records.json')
+
+        # Turning on hard delete mode
+        self.config['hard_delete'] = True
+        self.config['batch_size_rows'] = 5
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        self.assert_logical_streams_are_in_postgres_and_are_empty()
+
+    @mock.patch('target_postgres.emit_state')
+    def test_flush_streams_with_no_intermediate_flushes(self, mock_emit_state):
+        """Test emitting states when no intermediate flush required"""
+        mock_emit_state.get.return_value = None
+        tap_lines = test_utils.get_test_tap_lines('messages-pg-logical-streams.json')
+
+        # Set batch size big enough to never has to flush in the middle
+        self.config['hard_delete'] = True
+        self.config['batch_size_rows'] = 1000
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # State should be emitted only once with the latest received STATE message
+        self.assertEquals(
+            mock_emit_state.mock_calls,
+            [
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723618, "xmin": None},
+                    "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723635, "xmin": None},
+                    "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723651, "xmin": None},
+                    "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                    "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                    "public2-wearehere": {}}})
+            ])
+
+        # Every table should be loaded correctly
+        self.assert_logical_streams_are_in_postgres(True)
+
+    @mock.patch('target_postgres.emit_state')
+    def test_flush_streams_with_intermediate_flushes(self, mock_emit_state):
+        """Test emitting states when intermediate flushes required"""
+        mock_emit_state.get.return_value = None
+        tap_lines = test_utils.get_test_tap_lines('messages-pg-logical-streams.json')
+
+        # Set batch size small enough to trigger multiple stream flushes
+        self.config['hard_delete'] = True
+        self.config['batch_size_rows'] = 10
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # State should be emitted multiple times, updating the positions only in the stream which got flushed
+        self.assertEquals(
+            mock_emit_state.call_args_list,
+            [
+                # Flush #1 - Flushed edgydata until lsn: 108197216
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723618, "xmin": None},
+                     "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723635, "xmin": None},
+                     "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723651, "xmin": None},
+                     "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                     "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                     "public2-wearehere": {}}}),
+                # Flush #2 - Flushed logical1-logical1_table2 until lsn: 108201336
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723618, "xmin": None},
+                     "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108201336, "version": 1570922723635, "xmin": None},
+                     "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723651, "xmin": None},
+                     "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                     "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                     "public2-wearehere": {}}}),
+                # Flush #3 - Flushed logical1-logical1_table2 until lsn: 108237600
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723618, "xmin": None},
+                     "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108237600, "version": 1570922723635, "xmin": None},
+                     "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723651, "xmin": None},
+                     "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                     "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                     "public2-wearehere": {}}}),
+                # Flush #4 - Flushed logical1-logical1_table2 until lsn: 108238768
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723618, "xmin": None},
+                     "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108238768, "version": 1570922723635, "xmin": None},
+                     "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723651, "xmin": None},
+                     "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                     "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                     "public2-wearehere": {}}}),
+                # Flush #5 - Flushed logical1-logical1_table2 until lsn: 108239704,
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723618, "xmin": None},
+                     "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108239896, "version": 1570922723635, "xmin": None},
+                     "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108196176, "version": 1570922723651, "xmin": None},
+                     "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                     "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                     "public2-wearehere": {}}}),
+                # Flush #6 - Last flush, update every stream lsn: 108240872,
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723618, "xmin": None},
+                     "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723635, "xmin": None},
+                     "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723651, "xmin": None},
+                     "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                     "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                     "public2-wearehere": {}}}),
+            ])
+
+        # Every table should be loaded correctly
+        self.assert_logical_streams_are_in_postgres(True)
+
+    @mock.patch('target_postgres.emit_state')
+    def test_flush_streams_with_intermediate_flushes_on_all_streams(self, mock_emit_state):
+        """Test emitting states when intermediate flushes required and flush_all_streams is enabled"""
+        mock_emit_state.get.return_value = None
+        tap_lines = test_utils.get_test_tap_lines('messages-pg-logical-streams.json')
+
+        # Set batch size small enough to trigger multiple stream flushes
+        self.config['hard_delete'] = True
+        self.config['batch_size_rows'] = 10
+        self.config['flush_all_streams'] = True
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # State should be emitted 6 times, flushing every stream and updating every stream position
+        self.assertEquals(
+            mock_emit_state.call_args_list,
+            [
+                # Flush #1 - Flush every stream until lsn: 108197216
+                mock.call({"currently_syncing": None, "bookmarks": {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723618, "xmin": None},
+                    "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723635, "xmin": None},
+                    "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108197216, "version": 1570922723651, "xmin": None},
+                    "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                    "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                    "public2-wearehere": {}}}),
+                # Flush #2 - Flush every stream until lsn 108201336
+                mock.call({'currently_syncing': None, 'bookmarks': {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108201336, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108201336, "version": 1570922723618, "xmin": None},
+                    "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108201336, "version": 1570922723635, "xmin": None},
+                    "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108201336, "version": 1570922723651, "xmin": None},
+                    "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                    "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                    "public2-wearehere": {}}}),
+                # Flush #3 - Flush every stream until lsn: 108237600
+                mock.call({'currently_syncing': None, 'bookmarks': {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108237600, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108237600, "version": 1570922723618, "xmin": None},
+                    "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108237600, "version": 1570922723635, "xmin": None},
+                    "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108237600, "version": 1570922723651, "xmin": None},
+                    "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                    "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                    "public2-wearehere": {}}}),
+                # Flush #4 - Flush every stream until lsn: 108238768
+                mock.call({'currently_syncing': None, 'bookmarks': {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108238768, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108238768, "version": 1570922723618, "xmin": None},
+                    "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108238768, "version": 1570922723635, "xmin": None},
+                    "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108238768, "version": 1570922723651, "xmin": None},
+                    "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                    "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                    "public2-wearehere": {}}}),
+                # Flush #5 - Flush every stream until lsn: 108239704,
+                mock.call({'currently_syncing': None, 'bookmarks': {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108239896, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108239896, "version": 1570922723618, "xmin": None},
+                    "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108239896, "version": 1570922723635, "xmin": None},
+                    "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108239896, "version": 1570922723651, "xmin": None},
+                    "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                    "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                    "public2-wearehere": {}}}),
+                # Flush #6 - Last flush, update every stream until lsn: 108240872,
+                mock.call({'currently_syncing': None, 'bookmarks': {
+                    "logical1-logical1_edgydata": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723596, "xmin": None},
+                    "logical1-logical1_table1": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723618, "xmin": None},
+                    "logical1-logical1_table2": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723635, "xmin": None},
+                    "logical2-logical2_table1": {"last_replication_method": "LOG_BASED", "lsn": 108240872, "version": 1570922723651, "xmin": None},
+                    "public-city": {"last_replication_method": "INCREMENTAL", "replication_key": "id", "version": 1570922723667, "replication_key_value": 4079},
+                    "public-country": {"last_replication_method": "FULL_TABLE", "version": 1570922730456, "xmin": None},
+                    "public2-wearehere": {}}}),
+            ])
+
+        # Every table should be loaded correctly
+        self.assert_logical_streams_are_in_postgres(True)
 
     def test_record_validation(self):
         """Test validating records"""
