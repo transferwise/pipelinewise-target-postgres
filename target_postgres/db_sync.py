@@ -2,15 +2,13 @@ import json
 import sys
 import psycopg2
 import psycopg2.extras
-import singer
 import collections
 import inflection
 import re
 import uuid
 import itertools
 import time
-
-LOGGER = singer.get_logger('target_postgres')
+from singer import get_logger
 
 
 # pylint: disable=missing-function-docstring,missing-class-docstring
@@ -71,7 +69,7 @@ def column_type(schema_property):
     elif 'boolean' in property_type:
         col_type = 'boolean'
 
-    LOGGER.debug("schema_property: %s -> col_type: %s", schema_property, col_type)
+    get_logger('target_postgres').debug("schema_property: %s -> col_type: %s", schema_property, col_type)
 
     return col_type
 
@@ -207,12 +205,15 @@ class DbSync:
         self.connection_config = connection_config
         self.stream_schema_message = stream_schema_message
 
+        # logger to be used across the class's methods
+        self.logger = get_logger('target_postgres')
+
         # Validate connection configuration
         config_errors = validate_config(connection_config)
 
         # Exit if config has errors
         if len(config_errors) > 0:
-            LOGGER.error("Invalid configuration:\n   * %s", '\n   * '.join(config_errors))
+            self.logger.error("Invalid configuration:\n   * %s", '\n   * '.join(config_errors))
             sys.exit(1)
 
         self.schema_name = None
@@ -301,7 +302,7 @@ class DbSync:
         return psycopg2.connect(conn_string)
 
     def query(self, query, params=None):
-        LOGGER.debug("Running query: %s", query)
+        self.logger.debug("Running query: %s", query)
         with self.open_connection() as connection:
             with connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(
@@ -334,9 +335,9 @@ class DbSync:
         try:
             key_props = [str(flatten[p]) for p in self.stream_schema_message['key_properties']]
         except Exception as exc:
-            LOGGER.info("Cannot find %s primary key(s) in record: %s",
-                        self.stream_schema_message['key_properties'],
-                        flatten)
+            self.logger.info("Cannot find %s primary key(s) in record: %s",
+                             self.stream_schema_message['key_properties'],
+                             flatten)
             raise exc
         return ','.join(key_props)
 
@@ -353,7 +354,7 @@ class DbSync:
     def load_csv(self, file, count, size_bytes):
         stream_schema_message = self.stream_schema_message
         stream = stream_schema_message['stream']
-        LOGGER.info("Loading %d rows into '%s'", count, self.table_name(stream, False))
+        self.logger.info("Loading %d rows into '%s'", count, self.table_name(stream, False))
 
         with self.open_connection() as connection:
             with connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -367,7 +368,7 @@ class DbSync:
                     temp_table,
                     ', '.join(self.column_names())
                 )
-                LOGGER.debug(copy_sql)
+                self.logger.debug(copy_sql)
                 with open(file, "rb") as f:
                     cur.copy_expert(copy_sql, f)
                 if len(self.stream_schema_message['key_properties']) > 0:
@@ -376,9 +377,9 @@ class DbSync:
                 cur.execute(self.insert_from_temp_table(temp_table))
                 inserts = cur.rowcount
 
-                LOGGER.info('Loading into %s: %s',
-                            self.table_name(stream, False),
-                            json.dumps({'inserts': inserts, 'updates': updates, 'size_bytes': size_bytes}))
+                self.logger.info('Loading into %s: %s',
+                                 self.table_name(stream, False),
+                                 json.dumps({'inserts': inserts, 'updates': updates, 'size_bytes': size_bytes}))
 
     # pylint: disable=duplicate-string-formatting-argument
     def insert_from_temp_table(self, temp_table):
@@ -451,15 +452,15 @@ class DbSync:
 
     def grant_usage_on_schema(self, schema_name, grantee):
         query = "GRANT USAGE ON SCHEMA {} TO GROUP {}".format(schema_name, grantee)
-        LOGGER.info("Granting USAGE privilege on '%s' schema to '%s'... %s", schema_name, grantee, query)
+        self.logger.info("Granting USAGE privilege on '%s' schema to '%s'... %s", schema_name, grantee, query)
         self.query(query)
 
     def grant_select_on_all_tables_in_schema(self, schema_name, grantee):
         query = "GRANT SELECT ON ALL TABLES IN SCHEMA {} TO GROUP {}".format(schema_name, grantee)
-        LOGGER.info("Granting SELECT ON ALL TABLES privilege on '%s' schema to '%s'... %s",
-                    schema_name,
-                    grantee,
-                    query)
+        self.logger.info("Granting SELECT ON ALL TABLES privilege on '%s' schema to '%s'... %s",
+                         schema_name,
+                         grantee,
+                         query)
         self.query(query)
 
     @classmethod
@@ -476,7 +477,7 @@ class DbSync:
         index_name = 'idx_{}_{}'.format(table_without_schema[:15].replace(' ', '').replace('"', ''),
                                         column.replace(',', '_'))
         query = "CREATE INDEX IF NOT EXISTS {} ON {} ({})".format(index_name, table, column)
-        LOGGER.info("Creating index on '%s' table on '%s' column(s)... %s", table, column, query)
+        self.logger.info("Creating index on '%s' table on '%s' column(s)... %s", table, column, query)
         self.query(query)
 
     def create_indices(self, stream):
@@ -487,8 +488,8 @@ class DbSync:
     def delete_rows(self, stream):
         table = self.table_name(stream)
         query = "DELETE FROM {} WHERE _sdc_deleted_at IS NOT NULL RETURNING _sdc_deleted_at".format(table)
-        LOGGER.info("Deleting rows from '%s' table... %s", table, query)
-        LOGGER.info("DELETE %s", len(self.query(query)))
+        self.logger.info("Deleting rows from '%s' table... %s", table, query)
+        self.logger.info("DELETE %s", len(self.query(query)))
 
     def create_schema_if_not_exists(self, table_columns_cache=None):
         schema_name = self.schema_name
@@ -506,7 +507,7 @@ class DbSync:
 
         if len(schema_rows) == 0:
             query = "CREATE SCHEMA IF NOT EXISTS {}".format(schema_name)
-            LOGGER.info("Schema '%s' does not exist. Creating... %s", schema_name, query)
+            self.logger.info("Schema '%s' does not exist. Creating... %s", schema_name, query)
             self.query(query)
 
             self.grant_privilege(schema_name, self.grantees, self.grant_usage_on_schema)
@@ -558,7 +559,7 @@ class DbSync:
 
     def drop_column(self, column_name, stream):
         drop_column = "ALTER TABLE {} DROP COLUMN {}".format(self.table_name(stream), column_name)
-        LOGGER.info('Dropping column: %s', drop_column)
+        self.logger.info('Dropping column: %s', drop_column)
         self.query(drop_column)
 
     def version_column(self, column_name, stream):
@@ -566,12 +567,12 @@ class DbSync:
                                                                                column_name,
                                                                                column_name.replace("\"", ""),
                                                                                time.strftime("%Y%m%d_%H%M"))
-        LOGGER.info('Versioning column: %s', version_column)
+        self.logger.info('Versioning column: %s', version_column)
         self.query(version_column)
 
     def add_column(self, column, stream):
         add_column = "ALTER TABLE {} ADD COLUMN {}".format(self.table_name(stream), column)
-        LOGGER.info('Adding column: %s', add_column)
+        self.logger.info('Adding column: %s', add_column)
         self.query(add_column)
 
     def sync_table(self):
@@ -581,10 +582,10 @@ class DbSync:
         found_tables = [table for table in (self.get_tables()) if f'"{table["table_name"].lower()}"' == table_name]
         if len(found_tables) == 0:
             query = self.create_table_query()
-            LOGGER.info("Table '%s' does not exist. Creating... %s", table_name, query)
+            self.logger.info("Table '%s' does not exist. Creating... %s", table_name, query)
             self.query(query)
 
             self.grant_privilege(self.schema_name, self.grantees, self.grant_select_on_all_tables_in_schema)
         else:
-            LOGGER.info("Table '%s' exists", table_name)
+            self.logger.info("Table '%s' exists", table_name)
             self.update_columns()
