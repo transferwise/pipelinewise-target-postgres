@@ -9,14 +9,13 @@ from datetime import datetime
 from decimal import Decimal
 from tempfile import NamedTemporaryFile, mkstemp
 
-import singer
 from joblib import Parallel, delayed, parallel_backend
 from jsonschema import Draft4Validator, FormatChecker
+from singer import get_logger
 
 from target_postgres.db_sync import DbSync
 
-
-LOGGER = singer.get_logger('target_postgres')
+LOGGER = get_logger('target_postgres')
 
 
 def float_to_decimal(value):
@@ -237,9 +236,9 @@ def flush_records(stream, records_to_load, row_count, db_sync, temp_dir=None):
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', help='Config file')
-    args = parser.parse_args()
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('-c', '--config', help='Config file')
+    args = arg_parser.parse_args()
 
     if args.config:
         with open(args.config) as config_input:
