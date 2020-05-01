@@ -3,9 +3,11 @@ import os
 import json
 import datetime
 import target_postgres
+from target_postgres import RecordValidationException
 
 from nose.tools import assert_raises
 from target_postgres.db_sync import DbSync
+from psycopg2.errors import InvalidTextRepresentation
 
 try:
     import tests.utils as test_utils
@@ -543,6 +545,21 @@ class TestIntegration(unittest.TestCase):
         postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
         with assert_raises(Exception):
             self.config['default_target_schema_select_permissions'] = ['group_not_exists_1', 'group_not_exists_2']
+            target_postgres.persist_lines(self.config, tap_lines)
+
+    def test_record_validation(self):
+        """Test validating records"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-invalid-records.json')
+
+        # Loading invalid records when record validation enabled should fail at ...
+        self.config['validate_records'] = True
+
+        with assert_raises(RecordValidationException):
+            target_postgres.persist_lines(self.config, tap_lines)
+
+        # Loading invalid records when record validation disabled should fail at load time
+        self.config['validate_records'] = False
+        with assert_raises(InvalidTextRepresentation):
             target_postgres.persist_lines(self.config, tap_lines)
 
     def test_loading_tables_with_custom_temp_dir(self):
