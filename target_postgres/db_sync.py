@@ -350,13 +350,16 @@ class DbSync:
             ]
         )
 
-    def load_csv(self, file, count):
+    def load_csv(self, file, count, size_bytes):
         stream_schema_message = self.stream_schema_message
         stream = stream_schema_message['stream']
         LOGGER.info("Loading %d rows into '%s'", count, self.table_name(stream, False))
 
         with self.open_connection() as connection:
             with connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                inserts = 0
+                updates = 0
+
                 temp_table = self.table_name(stream_schema_message['stream'], is_temporary=True)
                 cur.execute(self.create_table_query(table_name=temp_table, is_temporary=True))
 
@@ -364,16 +367,18 @@ class DbSync:
                     temp_table,
                     ', '.join(self.column_names())
                 )
-                LOGGER.info(copy_sql)
-                cur.copy_expert(
-                    copy_sql,
-                    file
-                )
+                LOGGER.debug(copy_sql)
+                with open(file, "rb") as f:
+                    cur.copy_expert(copy_sql, f)
                 if len(self.stream_schema_message['key_properties']) > 0:
                     cur.execute(self.update_from_temp_table(temp_table))
-                    LOGGER.info(cur.statusmessage)
+                    updates = cur.rowcount
                 cur.execute(self.insert_from_temp_table(temp_table))
-                LOGGER.info(cur.statusmessage)
+                inserts = cur.rowcount
+
+                LOGGER.info('Loading into %s: %s',
+                            self.table_name(stream, False),
+                            json.dumps({'inserts': inserts, 'updates': updates, 'size_bytes': size_bytes}))
 
     # pylint: disable=duplicate-string-formatting-argument
     def insert_from_temp_table(self, temp_table):
