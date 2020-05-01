@@ -253,6 +253,20 @@ class TestIntegration(unittest.TestCase):
             should_metadata_columns_exist=True
         )
 
+    def test_loading_table_with_space(self):
+        """Loading a table where the name has space"""
+        tap_lines = test_utils.get_test_tap_lines('messages-with-space-in-table-name.json')
+
+        # Turning on hard delete mode
+        self.config['hard_delete'] = True
+        target_postgres.persist_lines(self.config, tap_lines)
+
+        # Check if data loaded correctly and metadata columns exist
+        self.assert_binary_data_is_in_postgres(
+            table_name='"table with space and uppercase"',
+            should_metadata_columns_exist=True
+        )
+
     def test_loading_unicode_characters(self):
         """Loading unicode encoded characters"""
         tap_lines = test_utils.get_test_tap_lines('messages-with-unicode-characters.json')
