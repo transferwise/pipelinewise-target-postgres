@@ -12,7 +12,7 @@ def _mock_record_to_csv_line(record):
     return record
 
 
-class TestTargetSnowflake(unittest.TestCase):
+class TestTargetPostgres(unittest.TestCase):
 
     def setUp(self):
         self.config = {}
