@@ -1,3 +1,26 @@
+2.0.0 (2020-05-02)
+-------------------
+
+**WARNING**: This release includes non backward compatible changes.
+Starting from `pipelinewise-target-postgres-2.0.0` the `integer` JSON Schema column types with minimum and maximum
+boundaries are loaded into Postgres `SMALLINT`, `INTEGER` and `BIGINT` values. If you're upgrading from an
+earlier version of pipelinewise-target-postgres then it's recommended to re-sync every table otherwise all the existing
+`NUMERIC` columns in Postgres will be versioned to the corresponding integer type.
+
+Further info about versioning columns at https://transferwise.github.io/pipelinewise/user_guide/schema_changes.html?highlight=versioning#versioning-columns
+
+### Changes
+- Add `flush_all_streams` option
+- Add `parallelism` option
+- Add `max_parallelism` option
+- Add `validate_records` option
+- Log inserts, updates and csv size_bytes in a more consumable format
+- Fixed an issue when JSON values sometimes not sent correctly
+- Support usage of reserved words as table and column names
+- Add `temp_dir` optional parameter to config
+- Load `integer` JSON Schema types with min and max boundaries to Postgres `SMALLINT`, `INTEGER`, `BIGINT` column types
+- Switch to `psychopg-binary` 2.8.5
+
 1.1.0 (2019-02-18)
 -------------------
 
