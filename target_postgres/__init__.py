@@ -8,10 +8,10 @@ import sys
 import copy
 from datetime import datetime
 from decimal import Decimal
-from tempfile import NamedTemporaryFile, mkstemp
+from tempfile import mkstemp
 
 from joblib import Parallel, delayed, parallel_backend
-from jsonschema import Draft4Validator, FormatChecker
+from jsonschema import Draft7Validator, FormatChecker
 from singer import get_logger
 
 from target_postgres.db_sync import DbSync
@@ -183,7 +183,7 @@ def persist_lines(config, lines) -> None:
             stream = o['stream']
 
             schemas[stream] = float_to_decimal(o['schema'])
-            validators[stream] = Draft4Validator(schemas[stream], format_checker=FormatChecker())
+            validators[stream] = Draft7Validator(schemas[stream], format_checker=FormatChecker())
 
             # flush records from previous stream SCHEMA
             if row_count.get(stream, 0) > 0:
