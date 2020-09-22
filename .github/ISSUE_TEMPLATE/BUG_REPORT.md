@@ -32,7 +32,7 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots to help explain your problem.
 
 **Your environment**
- - Version of tap: [e.g. 2.0.0]
+ - Version of target: [e.g. 2.0.0]
  - Version of python [e.g. 3.8]
 
 **Additional context**
