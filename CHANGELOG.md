@@ -1,7 +1,12 @@
+2.1.1 (2021-05-11)
+-------------------
+- Bump `joblib` from 0.13.2 to 0.16.0 to be Python 3.8 compatible
+
+
 2.1.0 (2020-09-22)
 -------------------
 
-- Enable SSL mode if `ssl` option is 'true' in config
+- Enable SSL mode if `ssl` option is `"true"` in config
 
 2.0.1 (2020-06-17)
 -------------------
