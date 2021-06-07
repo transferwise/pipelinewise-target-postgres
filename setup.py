@@ -27,7 +27,7 @@ setup(name="pipelinewise-target-postgres",
           "test": [
               'nose==1.3.7',
               'mock==3.0.5',
-              'pylint==2.4.4',
+              'pylint==2.8.3',
               'nose-cov==1.6'
             ]
       },
