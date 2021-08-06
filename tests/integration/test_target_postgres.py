@@ -1,12 +1,12 @@
 import unittest
 import os
 import json
-import mock
 import datetime
 import target_postgres
-from target_postgres import RecordValidationException
 
-from nose.tools import assert_raises
+from unittest import mock
+
+from target_postgres import RecordValidationException
 from target_postgres.db_sync import DbSync
 from psycopg2.errors import InvalidTextRepresentation
 
@@ -30,6 +30,7 @@ class TestIntegration(unittest.TestCase):
     @classmethod
     def setUp(cls):
         cls.config = test_utils.get_test_config()
+        print(cls.config)
         cls.maxDiff = None
         postgres = DbSync(cls.config)
         if cls.config['default_target_schema']:
@@ -277,13 +278,13 @@ class TestIntegration(unittest.TestCase):
     def test_invalid_json(self):
         """Receiving invalid JSONs should raise an exception"""
         tap_lines = test_utils.get_test_tap_lines('invalid-json.json')
-        with assert_raises(json.decoder.JSONDecodeError):
+        with self.assertRaises(json.decoder.JSONDecodeError):
             target_postgres.persist_lines(self.config, tap_lines)
 
     def test_message_order(self):
         """RECORD message without a previously received SCHEMA message should raise an exception"""
         tap_lines = test_utils.get_test_tap_lines('invalid-message-order.json')
-        with assert_raises(Exception):
+        with self.assertRaises(Exception):
             target_postgres.persist_lines(self.config, tap_lines)
 
     def test_loading_tables(self):
@@ -547,7 +548,7 @@ class TestIntegration(unittest.TestCase):
             [{'c_int': 1, 'c_pk': 1, 'c_varchar': '1'}])
 
         # Table two should have versioned column
-        self.assertEquals(
+        self.assertEqual(
             self.remove_metadata_columns_from_rows(table_two),
             [
                 {previous_column_name: datetime.datetime(2019, 2, 1, 15, 12, 45), 'c_int': 1, 'c_pk': 1,
@@ -637,13 +638,13 @@ class TestIntegration(unittest.TestCase):
 
         # Granting not existing group should raise exception
         postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
-        with assert_raises(Exception):
+        with self.assertRaises(Exception):
             self.config['default_target_schema_select_permissions'] = 'group_not_exists_1'
             target_postgres.persist_lines(self.config, tap_lines)
 
         # Granting not existing list of groups should raise exception
         postgres.query("DROP SCHEMA IF EXISTS {} CASCADE".format(self.config['default_target_schema']))
-        with assert_raises(Exception):
+        with self.assertRaises(Exception):
             self.config['default_target_schema_select_permissions'] = ['group_not_exists_1', 'group_not_exists_2']
             target_postgres.persist_lines(self.config, tap_lines)
 
@@ -691,7 +692,7 @@ class TestIntegration(unittest.TestCase):
         target_postgres.persist_lines(self.config, tap_lines)
 
         # State should be emitted only once with the latest received STATE message
-        self.assertEquals(
+        self.assertEqual(
             mock_emit_state.mock_calls,
             [
                 mock.call({"currently_syncing": None, "bookmarks": {
@@ -719,7 +720,7 @@ class TestIntegration(unittest.TestCase):
         target_postgres.persist_lines(self.config, tap_lines)
 
         # State should be emitted multiple times, updating the positions only in the stream which got flushed
-        self.assertEquals(
+        self.assertEqual(
             mock_emit_state.call_args_list,
             [
                 # Flush #1 - Flushed edgydata until lsn: 108197216
@@ -794,7 +795,7 @@ class TestIntegration(unittest.TestCase):
         target_postgres.persist_lines(self.config, tap_lines)
 
         # State should be emitted 6 times, flushing every stream and updating every stream position
-        self.assertEquals(
+        self.assertEqual(
             mock_emit_state.call_args_list,
             [
                 # Flush #1 - Flush every stream until lsn: 108197216
@@ -863,12 +864,12 @@ class TestIntegration(unittest.TestCase):
         # Loading invalid records when record validation enabled should fail at ...
         self.config['validate_records'] = True
 
-        with assert_raises(RecordValidationException):
+        with self.assertRaises(RecordValidationException):
             target_postgres.persist_lines(self.config, tap_lines)
 
         # Loading invalid records when record validation disabled should fail at load time
         self.config['validate_records'] = False
-        with assert_raises(InvalidTextRepresentation):
+        with self.assertRaises(InvalidTextRepresentation):
             target_postgres.persist_lines(self.config, tap_lines)
 
     def test_loading_tables_with_custom_temp_dir(self):
