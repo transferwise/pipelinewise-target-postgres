@@ -22,4 +22,4 @@ env:
 
 integration_test: env
 	. ./venv/bin/activate ;\
-	pytest tests/integration --cov=target_postgres  --cov-fail-under=87 -vx
+	pytest tests/integration --cov=target_postgres  --cov-fail-under=87 -v
