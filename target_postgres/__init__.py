@@ -94,7 +94,6 @@ def persist_lines(config, lines) -> None:
     stream_to_sync = {}
     total_row_count = {}
     batch_size_rows = config.get('batch_size_rows', DEFAULT_BATCH_SIZE_ROWS)
-    parallelism = config.get("parallelism", -1)
 
     # Loop over lines from stdin
     for line in lines:
@@ -127,8 +126,9 @@ def persist_lines(config, lines) -> None:
                         raise InvalidValidationOperationException(
                             f"Data validation failed and cannot load to destination. RECORD: {o['record']}\n"
                             "multipleOf validations that allows long precisions are not supported (i.e. with 15 digits"
-                            "or more) Try removing 'multipleOf' methods from JSON schema.")
-                    raise RecordValidationException(f"Record does not pass schema validation. RECORD: {o['record']}")
+                            "or more) Try removing 'multipleOf' methods from JSON schema.") from ex
+                    raise RecordValidationException(
+                        f"Record does not pass schema validation. RECORD: {o['record']}") from ex
 
             primary_key_string = stream_to_sync[stream].record_primary_key_string(o['record'])
             if not primary_key_string:

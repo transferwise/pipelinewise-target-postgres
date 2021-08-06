@@ -3,7 +3,7 @@
 from setuptools import setup
 
 with open('README.md') as f:
-      long_description = f.read()
+    long_description = f.read()
 
 setup(name="pipelinewise-target-postgres",
       version="2.1.1",
@@ -25,17 +25,16 @@ setup(name="pipelinewise-target-postgres",
       ],
       extras_require={
           "test": [
-              'nose==1.3.7',
-              'mock==3.0.5',
-              'pylint==2.4.4',
-              'nose-cov==1.6'
-            ]
+              'pytest==6.2.1',
+              'pylint==2.6.0',
+              'pytest-cov==2.10.1',
+          ]
       },
       entry_points="""
           [console_scripts]
           target-postgres=target_postgres:main
       """,
       packages=["target_postgres"],
-      package_data = {},
+      package_data={},
       include_package_data=True,
-)
+      )

@@ -1,5 +1,4 @@
 import unittest
-from nose.tools import assert_raises
 
 import target_postgres
 
@@ -31,7 +30,7 @@ class TestUnit(unittest.TestCase):
         # Empty configuration should fail - (nr_of_errors >= 0)
         self.assertGreater(len(validator(empty_config)),  0)
 
-        # Minimal configuratino should pass - (nr_of_errors == 0)
+        # Minimal configuration should pass - (nr_of_errors == 0)
         self.assertEqual(len(validator(minimal_config)), 0)
 
         # Configuration without schema references - (nr_of_errors >= 0)
@@ -72,21 +71,21 @@ class TestUnit(unittest.TestCase):
         json_arr =          {"type": ["array"]              }
         
         # Mapping from JSON schema types to Postgres column types
-        self.assertEquals(mapper(json_str)          , 'character varying')
-        self.assertEquals(mapper(json_str_or_null)  , 'character varying')
-        self.assertEquals(mapper(json_dt)           , 'timestamp without time zone')
-        self.assertEquals(mapper(json_dt_or_null)   , 'timestamp without time zone')
-        self.assertEquals(mapper(json_t)            , 'time without time zone')
-        self.assertEquals(mapper(json_t_or_null)    , 'time without time zone')
-        self.assertEquals(mapper(json_num)          , 'double precision')
-        self.assertEquals(mapper(json_smallint)     , 'smallint')
-        self.assertEquals(mapper(json_int)          , 'integer')
-        self.assertEquals(mapper(json_bigint)       , 'bigint')
-        self.assertEquals(mapper(json_nobound_int)  , 'numeric')
-        self.assertEquals(mapper(json_int_or_str)   , 'character varying')
-        self.assertEquals(mapper(json_bool)         , 'boolean')
-        self.assertEquals(mapper(json_obj)          , 'jsonb')
-        self.assertEquals(mapper(json_arr)          , 'jsonb')
+        self.assertEqual(mapper(json_str)          , 'character varying')
+        self.assertEqual(mapper(json_str_or_null)  , 'character varying')
+        self.assertEqual(mapper(json_dt)           , 'timestamp without time zone')
+        self.assertEqual(mapper(json_dt_or_null)   , 'timestamp without time zone')
+        self.assertEqual(mapper(json_t)            , 'time without time zone')
+        self.assertEqual(mapper(json_t_or_null)    , 'time without time zone')
+        self.assertEqual(mapper(json_num)          , 'double precision')
+        self.assertEqual(mapper(json_smallint)     , 'smallint')
+        self.assertEqual(mapper(json_int)          , 'integer')
+        self.assertEqual(mapper(json_bigint)       , 'bigint')
+        self.assertEqual(mapper(json_nobound_int)  , 'numeric')
+        self.assertEqual(mapper(json_int_or_str)   , 'character varying')
+        self.assertEqual(mapper(json_bool)         , 'boolean')
+        self.assertEqual(mapper(json_obj)          , 'jsonb')
+        self.assertEqual(mapper(json_arr)          , 'jsonb')
 
     def test_stream_name_to_dict(self):
         """Test identifying catalog, schema and table names from fully qualified stream and table names"""

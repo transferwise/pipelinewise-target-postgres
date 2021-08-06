@@ -23,43 +23,43 @@ installation instructions for [Mac](http://docs.python-guide.org/en/latest/start
 It's recommended to use a virtualenv:
 
 ```bash
-  python3 -m venv venv
-  pip install pipelinewise-target-postgres
-```
-
-or
-
-```bash
-  python3 -m venv venv
-  . venv/bin/activate
-  pip install --upgrade pip
-  pip install .
+make venv
 ```
 
 ### To run
 
-Like any other target that's following the singer specificiation:
+Like any other target that's following the singer specification:
 
 `some-singer-tap | target-postgres --config [config.json]`
 
-It's reading incoming messages from STDIN and using the properites in `config.json` to upload data into Postgres.
+It's reading incoming messages from STDIN and using the properties in `config.json` to upload data into Postgres.
 
 **Note**: To avoid version conflicts run `tap` and `targets` in separate virtual environments.
 
+
+#### Spin up a PG DB
+
+Make use of the available docker-compose file to spin up a PG DB.
+
+```bash
+docker-compose up -d --build db
+```
+
+
 ### Configuration settings
 
-Running the the target connector requires a `config.json` file. An example with the minimal settings:
+Running the target connector requires a `config.json` file. An example with the minimal settings:
 
-   ```json
-   {
-     "host": "localhost",
-     "port": 5432,
-     "user": "my_user",
-     "password": "secret",
-     "dbname": "my_db_name",
-     "default_target_schema": "my_target_schema"
-   }
-   ```
+```json
+{
+    "host": "localhost",
+    "port": 5432,
+    "user": "my_user",
+    "password": "secret",
+    "dbname": "target_db",
+    "default_target_schema": "public"
+}
+```
 
 Full list of options in `config.json`:
 
@@ -96,33 +96,29 @@ Full list of options in `config.json`:
   export TARGET_POSTGRES_SCHEMA=<postgres-schema>
 ```
 
-2. Install python dependencies in a virtual env and run nose unit and integration tests
+**PS**: You can run `make env` to export pre-defined environment variables
+
+
+2. Install python dependencies in a virtual env and run unit and integration tests
 ```
-  python3 -m venv venv
-  . venv/bin/activate
-  pip install --upgrade pip
-  pip install .[test]
+  make venv
 ```
 
 3. To run unit tests:
 ```
-  nosetests --where=tests/unit
+  make unit_test
 ```
 
 4. To run integration tests:
 ```
-  nosetests --where=tests/integration
+  make integration_test
 ```
 
 ### To run pylint:
 
 1. Install python dependencies and run python linter
 ```
-  python3 -m venv venv
-  . venv/bin/activate
-  pip install --upgrade pip
-  pip install .[test]
-  pylint --rcfile .pylintrc --disable duplicate-code target_postgres/
+ make venv pylint
 ```
 
 ## License
