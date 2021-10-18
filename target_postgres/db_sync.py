@@ -9,6 +9,7 @@ import uuid
 import itertools
 import time
 from singer import get_logger
+import pydevd_pycharm
 
 
 # pylint: disable=missing-function-docstring,missing-class-docstring
@@ -366,11 +367,19 @@ class DbSync:
 
                 temp_table = self.table_name(stream_schema_message['stream'], is_temporary=True)
                 cur.execute(self.create_table_query(table_name=temp_table, is_temporary=True))
+                # self.logger.warn("Debugging")
+                # pydevd_pycharm.settrace('localhost', port=9999, stdoutToServer=True, stderrToServer=True, suspend=False)
 
-                copy_sql = "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, ESCAPE '\\')".format(
+                copy_sql = "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, ESCAPE '\\', FREEZE 1)".format(
                     temp_table,
                     ', '.join(self.column_names())
                 )
+                self.ignore_null_key = self.connection_config.get('ignore_null_key')
+                if self.ignore_null_key:
+                    if len(self.stream_schema_message['key_properties']) > 0:
+                        copy_sql += " where "
+                        copy_sql += " is not null and ".join(self.stream_schema_message['key_properties'])
+                        copy_sql += " is not null"
                 self.logger.debug(copy_sql)
                 with open(file, "rb") as f:
                     cur.copy_expert(copy_sql, f)
