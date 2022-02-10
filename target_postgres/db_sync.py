@@ -349,7 +349,7 @@ class DbSync:
         return ','.join(
             [
                 json.dumps(flatten[name], ensure_ascii=False)
-                if name in flatten and (flatten[name] == 0 or flatten[name]) else ''
+                if name in flatten and (flatten[name] == 0 or flatten[name] or (column_type(self.flatten_schema[name]) == 'character varying' and flatten[name] == '')) else '###NULL###'
                 for name in self.flatten_schema
             ]
         )
@@ -367,7 +367,7 @@ class DbSync:
                 temp_table = self.table_name(stream_schema_message['stream'], is_temporary=True)
                 cur.execute(self.create_table_query(table_name=temp_table, is_temporary=True))
 
-                copy_sql = "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, ESCAPE '\\')".format(
+                copy_sql = "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, ESCAPE '\\', NULL '###NULL###')".format(
                     temp_table,
                     ', '.join(self.column_names())
                 )
