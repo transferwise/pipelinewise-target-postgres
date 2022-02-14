@@ -11,6 +11,8 @@ import time
 from singer import get_logger
 
 
+SHOULD_INFLECT = False
+
 # pylint: disable=missing-function-docstring,missing-class-docstring
 def validate_config(config):
     errors = []
@@ -81,10 +83,17 @@ def safe_column_name(name):
 def column_clause(name, schema_property):
     return '{} {}'.format(safe_column_name(name), column_type(schema_property))
 
+def inflect_column_name(name):
+    if SHOULD_INFLECT:
+        name = re.sub(r"([A-Z]+)_([A-Z][a-z])", r'\1__\2', name)
+        name = re.sub(r"([a-z\d])_([A-Z])", r'\1__\2', name)
+        return inflection.underscore(name)
+    else:
+        return name
 
 def flatten_key(k, parent_key, sep):
     full_key = parent_key + [k]
-    inflected_key = full_key.copy()
+    inflected_key = [inflect_column_name(n) for n in full_key]
     reducer_index = 0
     while len(sep.join(inflected_key)) >= 63 and reducer_index < len(inflected_key):
         reduced_key = re.sub(r'[a-z]', '', inflection.camelize(inflected_key[reducer_index]))
@@ -156,7 +165,7 @@ def flatten_record(d, flatten_schema=None, parent_key=[], sep='__', level=0, max
 
 
 def primary_column_names(stream_schema_message):
-    return [safe_column_name(p) for p in stream_schema_message['key_properties']]
+    return [safe_column_name(inflect_column_name(p)) for p in stream_schema_message['key_properties']]
 
 
 def stream_name_to_dict(stream_name, separator='-'):
@@ -210,6 +219,9 @@ class DbSync:
 
         # Validate connection configuration
         config_errors = validate_config(connection_config)
+
+        global SHOULD_INFLECT
+        SHOULD_INFLECT = bool(self.connection_config.get('underscore_camel_case_fields'))
 
         # Exit if config has errors
         if len(config_errors) > 0:
@@ -336,7 +348,7 @@ class DbSync:
             return None
         flatten = flatten_record(record, self.flatten_schema, max_level=self.data_flattening_max_level)
         try:
-            key_props = [str(flatten[p]) for p in self.stream_schema_message['key_properties']]
+            key_props = [str(flatten[inflect_column_name(p)]) for p in self.stream_schema_message['key_properties']]
         except Exception as exc:
             self.logger.info("Cannot find %s primary key(s) in record: %s",
                              self.stream_schema_message['key_properties'],

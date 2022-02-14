@@ -83,6 +83,7 @@ Full list of options in `config.json`:
 | primary_key_required                | Boolean |            | (Default: True) Log based and Incremental replications on tables with no Primary Key cause duplicates when merging UPDATE events. When set to true, stop loading data if no Primary Key is defined. |
 | validate_records                    | Boolean |            | (Default: False) Validate every single record message to the corresponding JSON schema. This option is disabled by default and invalid RECORD messages will fail only at load time by Postgres. Enabling this option will detect invalid records earlier but could cause performance degradation. |
 | temp_dir                            | String  |            | (Default: platform-dependent) Directory of temporary CSV files with RECORD messages. |
+| underscore_camel_case_fields        | Boolean|            | (Default: False) Optionally enables underscoring camel case fields. (Enabled this would turn a field name of 'testMyCamelCase' into a column name of 'test_my_camel_case) |
 
 ### To run tests:
 
