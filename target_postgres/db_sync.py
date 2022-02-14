@@ -37,7 +37,7 @@ def validate_config(config):
 
 
 # pylint: disable=fixme
-def column_type(schema_property):
+def column_type(schema_property, logger=None):
     property_type = schema_property['type']
     property_format = schema_property['format'] if 'format' in schema_property else None
     col_type = 'character varying'
@@ -69,7 +69,8 @@ def column_type(schema_property):
     elif 'boolean' in property_type:
         col_type = 'boolean'
 
-    get_logger('target_postgres').debug("schema_property: %s -> col_type: %s", schema_property, col_type)
+    if logger:
+        logger.debug("schema_property: %s -> col_type: %s", schema_property, col_type)
 
     return col_type
 
@@ -78,8 +79,8 @@ def safe_column_name(name):
     return '"{}"'.format(name).lower()
 
 
-def column_clause(name, schema_property):
-    return '{} {}'.format(safe_column_name(name), column_type(schema_property))
+def column_clause(name, schema_property, logger):
+    return '{} {}'.format(safe_column_name(name), column_type(schema_property, logger))
 
 
 def flatten_key(k, parent_key, sep):
@@ -436,7 +437,8 @@ class DbSync:
         columns = [
             column_clause(
                 name,
-                schema
+                schema,
+                self.logger
             )
             for (name, schema) in self.flatten_schema.items()
         ]
@@ -537,7 +539,8 @@ class DbSync:
         columns_to_add = [
             column_clause(
                 name,
-                properties_schema
+                properties_schema,
+                self.logger
             )
             for (name, properties_schema) in self.flatten_schema.items()
             if name.lower() not in columns_dict
@@ -549,11 +552,12 @@ class DbSync:
         columns_to_replace = [
             (safe_column_name(name), column_clause(
                 name,
-                properties_schema
+                properties_schema,
+                self.logger
             ))
             for (name, properties_schema) in self.flatten_schema.items()
             if name.lower() in columns_dict and
-            columns_dict[name.lower()]['data_type'].lower() != column_type(properties_schema).lower()
+            columns_dict[name.lower()]['data_type'].lower() != column_type(properties_schema, self.logger).lower()
         ]
 
         for (column_name, column) in columns_to_replace:
