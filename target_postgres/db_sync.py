@@ -159,7 +159,7 @@ def primary_column_names(stream_schema_message):
     return [safe_column_name(p) for p in stream_schema_message['key_properties']]
 
 
-def stream_name_to_dict(stream_name, separator='-'):
+def stream_name_to_dict(stream_name, separator='.'):
     catalog_name = None
     schema_name = None
     table_name = stream_name
