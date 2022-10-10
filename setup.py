@@ -26,7 +26,7 @@ setup(name="pipelinewise-target-postgres",
       extras_require={
           "test": [
               'pytest==6.2.5',
-              'pylint==2.6.0',
+              'pylint==2.15.3',
               'pytest-cov==2.10.1',
           ]
       },
