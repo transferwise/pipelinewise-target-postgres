@@ -518,7 +518,7 @@ class DbSync:
     def get_tables(self):
         return self.query(
             'SELECT table_name FROM information_schema.tables WHERE table_schema = %s',
-            (self.schema_name,)
+            (self.schema_name.lower(),)
         )
 
     def get_table_columns(self, table_name):
