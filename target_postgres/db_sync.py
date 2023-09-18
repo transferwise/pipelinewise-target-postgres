@@ -181,6 +181,10 @@ def stream_name_to_dict(stream_name, separator='-'):
     }
 
 
+def csv_quote(s):
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 # pylint: disable=too-many-public-methods,too-many-instance-attributes
 class DbSync:
     def __init__(self, connection_config, stream_schema_message=None):
@@ -348,7 +352,7 @@ class DbSync:
         flatten = flatten_record(record, self.flatten_schema, max_level=self.data_flattening_max_level)
         return ','.join(
             [
-                json.dumps(flatten[name], ensure_ascii=False)
+                csv_quote(flatten[name])
                 if name in flatten and (flatten[name] == 0 or flatten[name]) else ''
                 for name in self.flatten_schema
             ]
