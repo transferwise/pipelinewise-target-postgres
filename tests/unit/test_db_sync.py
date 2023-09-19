@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 
 import target_postgres
 
@@ -320,3 +321,41 @@ class TestUnit(unittest.TestCase):
         for idx, (should_use_flatten_schema, record, expected_output) in enumerate(test_cases):
             output = flatten_record(record, flatten_schema if should_use_flatten_schema else None)
             assert output == expected_output
+
+    def test_record_to_csv_line(self):
+        dbsync = unittest.mock.MagicMock()
+        dbsync.flatten_schema = {
+            "c_pk": {"type": ["null", "integer"]},
+            "c_varchar": {"type": ["null", "string"]},
+            "c_int": {"type": ["null", "integer"]}}
+        dbsync.data_flattening_max_level = 0
+
+        test_cases = [
+            (
+                {
+                    "c_pk": 123,
+                    "c_varchar": "hello",
+                    "c_int": 456,
+                },
+                '123,"hello",456',
+            ),
+            (
+                {
+                    "c_pk": 999,
+                    "c_varchar": "hello\nworld",
+                    "c_int": None,
+                },
+                '999,"hello\nworld",',
+            ),
+            (
+                {
+                    "c_pk": 1,
+                    "c_varchar": 'some "quotes" and \\backslashes\\',
+                    "c_int": 555,
+                },
+                '1,"some \\"quotes\\" and \\\\backslashes\\\\",555',
+            ),
+        ]
+
+        for idx, (record, expected_output) in enumerate(test_cases):
+            assert target_postgres.db_sync.DbSync.record_to_csv_line(dbsync, record) == expected_output

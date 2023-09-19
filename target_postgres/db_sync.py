@@ -182,6 +182,8 @@ def stream_name_to_dict(stream_name, separator='-'):
 
 
 def csv_quote(s):
+    if isinstance(s, int):
+        return str(s)
     return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
