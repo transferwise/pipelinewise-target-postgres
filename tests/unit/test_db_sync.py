@@ -355,6 +355,26 @@ class TestUnit(unittest.TestCase):
                 },
                 '1,"some \\"quotes\\" and \\\\backslashes\\\\",555',
             ),
+            (
+                {
+                    "c_pk": 1,
+                    "c_varchar": "",
+                    "c_int": 2,
+                },
+                '1,"",2',
+            ),
+            (
+                {
+                    "c_pk": 1,
+                    "c_varchar": None,
+                    "c_int": 2,
+                },
+                '1,,2',
+            ),
+            (
+                {},
+                ',,',
+            ),
         ]
 
         for idx, (record, expected_output) in enumerate(test_cases):
