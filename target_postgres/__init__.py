@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import csv
 import io
 import json
 import os
@@ -344,10 +345,14 @@ def flush_records(stream, records_to_load, row_count, db_sync, temp_dir=None):
 
     size_bytes = 0
     csv_fd, csv_file = mkstemp(suffix='.csv', prefix=f'{stream}_', dir=temp_dir)
-    with open(csv_fd, 'w+b') as f:
+    with open(csv_fd, 'w') as csvfile:
+        writer = csv.DictWriter(
+            csvfile,
+            fieldnames=list(db_sync.flatten_schema.keys()),
+            extrasaction='ignore',
+        )
         for record in records_to_load.values():
-            csv_line = db_sync.record_to_csv_line(record)
-            f.write(bytes(csv_line + '\n', 'UTF-8'))
+            writer.writerow(db_sync.record_to_flattened_record(record))
 
     size_bytes = os.path.getsize(csv_file)
     db_sync.load_csv(csv_file, row_count, size_bytes)
