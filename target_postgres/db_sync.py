@@ -1,13 +1,15 @@
 import json
 import sys
-import psycopg2
-import psycopg2.extras
-import inflection
 import re
 import uuid
 import itertools
 import time
 from collections.abc import MutableMapping
+from typing import Dict
+
+import psycopg2
+import psycopg2.extras
+import inflection
 from singer import get_logger
 
 
@@ -344,15 +346,8 @@ class DbSync:
             raise exc
         return ','.join(key_props)
 
-    def record_to_csv_line(self, record):
-        flatten = flatten_record(record, self.flatten_schema, max_level=self.data_flattening_max_level)
-        return ','.join(
-            [
-                json.dumps(flatten[name], ensure_ascii=False)
-                if name in flatten and (flatten[name] == 0 or flatten[name]) else ''
-                for name in self.flatten_schema
-            ]
-        )
+    def record_to_flattened_record(self, record: Dict) -> Dict:
+        return flatten_record(record, self.flatten_schema, max_level=self.data_flattening_max_level)
 
     def load_csv(self, file, count, size_bytes):
         stream_schema_message = self.stream_schema_message
@@ -367,7 +362,7 @@ class DbSync:
                 temp_table = self.table_name(stream_schema_message['stream'], is_temporary=True)
                 cur.execute(self.create_table_query(table_name=temp_table, is_temporary=True))
 
-                copy_sql = "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, ESCAPE '\\')".format(
+                copy_sql = "COPY {} ({}) FROM STDIN WITH (FORMAT CSV)".format(
                     temp_table,
                     ', '.join(self.column_names())
                 )
