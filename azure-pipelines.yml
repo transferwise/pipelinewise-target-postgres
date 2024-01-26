@@ -26,6 +26,9 @@ steps:
 - script: make venv
   displayName: 'Create virtual environment'
 
+- script: make pylint
+  displayName: 'Lint'
+
 - script: make unit_test
   displayName: 'Build and run unit tests'
 
