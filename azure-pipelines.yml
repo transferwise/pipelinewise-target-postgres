@@ -18,6 +18,11 @@ strategy:
       python.version: '3.9'
 
 steps:
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: $(Build.SourcesDirectory)
+    artifactName: Source
+
 - task: UsePythonVersion@0
   inputs:
     versionSpec: '$(python.version)'
@@ -31,8 +36,3 @@ steps:
 
 - script: make unit_test
   displayName: 'Build and run unit tests'
-
-- task: PublishBuildArtifacts@1
-  inputs:
-    pathToPublish: $(Build.SourcesDirectory)
-    artifactName: Source
