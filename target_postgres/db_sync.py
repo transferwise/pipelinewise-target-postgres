@@ -11,8 +11,6 @@ from collections.abc import MutableMapping
 from singer import get_logger
 
 
-SHOULD_INFLECT = False
-
 # pylint: disable=missing-function-docstring,missing-class-docstring
 def validate_config(config):
     errors = []
@@ -83,17 +81,16 @@ def safe_column_name(name):
 def column_clause(name, schema_property):
     return '{} {}'.format(safe_column_name(name), column_type(schema_property))
 
-def inflect_column_name(name):
-    if SHOULD_INFLECT:
+def inflect_column_name(name, should_inflect):
+    if should_inflect:
         name = re.sub(r"([A-Z]+)_([A-Z][a-z])", r'\1__\2', name)
         name = re.sub(r"([a-z\d])_([A-Z])", r'\1__\2', name)
         return inflection.underscore(name)
-    else:
-        return name
+    return name
 
-def flatten_key(k, parent_key, sep):
+def flatten_key(k, parent_key, sep, should_inflect):
     full_key = parent_key + [k]
-    inflected_key = [inflect_column_name(n) for n in full_key]
+    inflected_key = [inflect_column_name(n, should_inflect) for n in full_key]
     reducer_index = 0
     while len(sep.join(inflected_key)) >= 63 and reducer_index < len(inflected_key):
         reduced_key = re.sub(r'[a-z]', '', inflection.camelize(inflected_key[reducer_index]))
@@ -104,18 +101,23 @@ def flatten_key(k, parent_key, sep):
     return sep.join(inflected_key)
 
 
-# pylint: disable=dangerous-default-value,invalid-name
-def flatten_schema(d, parent_key=[], sep='__', level=0, max_level=0):
+# pylint: disable=dangerous-default-value,invalid-name,too-many-arguments
+def flatten_schema(d, should_inflect, parent_key=[], sep='__', level=0, max_level=0):
     items = []
 
     if 'properties' not in d:
         return {}
 
     for k, v in d['properties'].items():
-        new_key = flatten_key(k, parent_key, sep)
+        new_key = flatten_key(k, parent_key, sep, should_inflect)
         if 'type' in v.keys():
             if 'object' in v['type'] and 'properties' in v and level < max_level:
-                items.extend(flatten_schema(v, parent_key + [k], sep=sep, level=level + 1, max_level=max_level).items())
+                items.extend(flatten_schema(v,
+                                            should_inflect,
+                                            parent_key + [k],
+                                            sep=sep,
+                                            level=level + 1,
+                                            max_level=max_level).items())
             else:
                 items.append((new_key, v))
         else:
@@ -152,20 +154,20 @@ def _should_json_dump_value(key, value, flatten_schema=None):
 
 
 # pylint: disable-msg=too-many-arguments
-def flatten_record(d, flatten_schema=None, parent_key=[], sep='__', level=0, max_level=0):
+def flatten_record(d, should_inflect, flatten_schema=None, parent_key=[], sep='__', level=0, max_level=0):
     items = []
     for k, v in d.items():
-        new_key = flatten_key(k, parent_key, sep)
+        new_key = flatten_key(k, parent_key, sep, should_inflect)
         if isinstance(v, MutableMapping) and level < max_level:
-            items.extend(flatten_record(v, flatten_schema, parent_key + [k], sep=sep, level=level + 1,
+            items.extend(flatten_record(v, should_inflect, flatten_schema, parent_key + [k], sep=sep, level=level + 1,
                                         max_level=max_level).items())
         else:
             items.append((new_key, json.dumps(v) if _should_json_dump_value(k, v, flatten_schema) else v))
     return dict(items)
 
 
-def primary_column_names(stream_schema_message):
-    return [safe_column_name(inflect_column_name(p)) for p in stream_schema_message['key_properties']]
+def primary_column_names(stream_schema_message, should_inflect):
+    return [safe_column_name(inflect_column_name(p, should_inflect)) for p in stream_schema_message['key_properties']]
 
 
 def stream_name_to_dict(stream_name, separator='-'):
@@ -220,8 +222,7 @@ class DbSync:
         # Validate connection configuration
         config_errors = validate_config(connection_config)
 
-        global SHOULD_INFLECT
-        SHOULD_INFLECT = bool(self.connection_config.get('underscore_camel_case_fields'))
+        self.should_inflect = bool(self.connection_config.get('underscore_camel_case_fields'))
 
         # Exit if config has errors
         if len(config_errors) > 0:
@@ -300,6 +301,7 @@ class DbSync:
 
             self.data_flattening_max_level = self.connection_config.get('data_flattening_max_level', 0)
             self.flatten_schema = flatten_schema(stream_schema_message['schema'],
+                                                 self.should_inflect,
                                                  max_level=self.data_flattening_max_level)
 
     def open_connection(self):
@@ -346,9 +348,13 @@ class DbSync:
     def record_primary_key_string(self, record):
         if len(self.stream_schema_message['key_properties']) == 0:
             return None
-        flatten = flatten_record(record, self.flatten_schema, max_level=self.data_flattening_max_level)
+        flatten = flatten_record(record,
+                                 self.should_inflect,
+                                 self.flatten_schema,
+                                 max_level=self.data_flattening_max_level)
         try:
-            key_props = [str(flatten[inflect_column_name(p)]) for p in self.stream_schema_message['key_properties']]
+            key_props = [str(flatten[inflect_column_name(p, self.should_inflect)])
+                         for p in self.stream_schema_message['key_properties']]
         except Exception as exc:
             self.logger.info("Cannot find %s primary key(s) in record: %s",
                              self.stream_schema_message['key_properties'],
@@ -357,7 +363,10 @@ class DbSync:
         return ','.join(key_props)
 
     def record_to_csv_line(self, record):
-        flatten = flatten_record(record, self.flatten_schema, max_level=self.data_flattening_max_level)
+        flatten = flatten_record(record,
+                                 self.should_inflect,
+                                 self.flatten_schema,
+                                 max_level=self.data_flattening_max_level)
         return ','.join(
             [
                 json.dumps(flatten[name], ensure_ascii=False)
@@ -432,12 +441,12 @@ class DbSync:
 
     def primary_key_condition(self, right_table):
         stream_schema_message = self.stream_schema_message
-        names = primary_column_names(stream_schema_message)
+        names = primary_column_names(stream_schema_message, self.should_inflect)
         return ' AND '.join(['s.{} = {}.{}'.format(c, right_table, c) for c in names])
 
     def primary_key_null_condition(self, right_table):
         stream_schema_message = self.stream_schema_message
-        names = primary_column_names(stream_schema_message)
+        names = primary_column_names(stream_schema_message, self.should_inflect)
         return ' AND '.join(['{}.{} is null'.format(right_table, c) for c in names])
 
     def column_names(self):
@@ -453,7 +462,8 @@ class DbSync:
             for (name, schema) in self.flatten_schema.items()
         ]
 
-        primary_key = ["PRIMARY KEY ({})".format(', '.join(primary_column_names(stream_schema_message)))] \
+        primary_key = ["PRIMARY KEY ({})".format(', '.join(primary_column_names(stream_schema_message,
+                                                                                self.should_inflect)))] \
             if len(stream_schema_message['key_properties']) > 0 else []
 
         if not table_name:

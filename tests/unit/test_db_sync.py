@@ -126,7 +126,7 @@ class TestUnit(unittest.TestCase):
 
         # Schema with no object properties should be empty dict
         schema_with_no_properties = {"type": "object"}
-        assert flatten_schema(schema_with_no_properties) == {}
+        assert flatten_schema(schema_with_no_properties, True) == {}
 
         not_nested_schema = {
             "type": "object",
@@ -135,7 +135,7 @@ class TestUnit(unittest.TestCase):
                 "c_varchar": {"type": ["null", "string"]},
                 "c_int": {"type": ["null", "integer"]}}}
         # NO FLATTENNING - Schema with simple properties should be a plain dictionary
-        assert flatten_schema(not_nested_schema) == not_nested_schema['properties']
+        assert flatten_schema(not_nested_schema, True) == not_nested_schema['properties']
 
         nested_schema_with_no_properties = {
             "type": "object",
@@ -145,7 +145,7 @@ class TestUnit(unittest.TestCase):
                 "c_int": {"type": ["null", "integer"]},
                 "c_obj": {"type": ["null", "object"]}}}
         # NO FLATTENNING - Schema with object type property but without further properties should be a plain dictionary
-        assert flatten_schema(nested_schema_with_no_properties) == nested_schema_with_no_properties['properties']
+        assert flatten_schema(nested_schema_with_no_properties, True) == nested_schema_with_no_properties['properties']
 
         nested_schema_with_properties = {
             "type": "object",
@@ -171,15 +171,15 @@ class TestUnit(unittest.TestCase):
         }
         # NO FLATTENNING - Schema with object type property but without further properties should be a plain dictionary
         # No flattening (default)
-        assert flatten_schema(nested_schema_with_properties) == nested_schema_with_properties['properties']
+        assert flatten_schema(nested_schema_with_properties, True) == nested_schema_with_properties['properties']
 
         # NO FLATTENNING - Schema with object type property but without further properties should be a plain dictionary
         #   max_level: 0 : No flattening (default)
-        assert flatten_schema(nested_schema_with_properties, max_level=0) == nested_schema_with_properties['properties']
+        assert flatten_schema(nested_schema_with_properties, True, max_level=0) == nested_schema_with_properties['properties']
 
         # FLATTENNING - Schema with object type property but without further properties should be a dict with flattened properties
         assert \
-            flatten_schema(nested_schema_with_properties, max_level=1) == \
+            flatten_schema(nested_schema_with_properties, True, max_level=1) == \
             {
                 'c_pk': {'type': ['null', 'integer']},
                 'c_varchar': {'type': ['null', 'string']},
@@ -197,7 +197,7 @@ class TestUnit(unittest.TestCase):
 
         # FLATTENNING - Schema with object type property but without further properties should be a dict with flattened properties
         assert \
-            flatten_schema(nested_schema_with_properties, max_level=10) == \
+            flatten_schema(nested_schema_with_properties, True, max_level=10) == \
             {
                 'c_pk': {'type': ['null', 'integer']},
                 'c_varchar': {'type': ['null', 'string']},
@@ -214,11 +214,11 @@ class TestUnit(unittest.TestCase):
 
         empty_record = {}
         # Empty record should be empty dict
-        assert flatten_record(empty_record) == {}
+        assert flatten_record(empty_record, True) == {}
 
         not_nested_record = {"c_pk": 1, "c_varchar": "1", "c_int": 1}
         # NO FLATTENNING - Record with simple properties should be a plain dictionary
-        assert flatten_record(not_nested_record) == not_nested_record
+        assert flatten_record(not_nested_record, True) == not_nested_record
 
         nested_record = {
             "c_pk": 1,
@@ -234,7 +234,7 @@ class TestUnit(unittest.TestCase):
 
         # NO FLATTENNING - No flattening (default)
         assert \
-            flatten_record(nested_record) == \
+            flatten_record(nested_record, True) == \
             {
                 "c_pk": 1,
                 "c_varchar": "1",
@@ -245,7 +245,7 @@ class TestUnit(unittest.TestCase):
         # NO FLATTENNING
         #   max_level: 0 : No flattening (default)
         assert \
-            flatten_record(nested_record, max_level=0) == \
+            flatten_record(nested_record, True, max_level=0) == \
             {
                 "c_pk": 1,
                 "c_varchar": "1",
@@ -256,7 +256,7 @@ class TestUnit(unittest.TestCase):
         # SEMI FLATTENNING
         #   max_level: 1 : Semi-flattening (default)
         assert \
-            flatten_record(nested_record, max_level=1) == \
+            flatten_record(nested_record, True, max_level=1) == \
             {
                 "c_pk": 1,
                 "c_varchar": "1",
@@ -268,7 +268,7 @@ class TestUnit(unittest.TestCase):
 
         # FLATTENNING
         assert \
-            flatten_record(nested_record, max_level=10) == \
+            flatten_record(nested_record, True, max_level=10) == \
             {
                 "c_pk": 1,
                 "c_varchar": "1",
@@ -318,5 +318,5 @@ class TestUnit(unittest.TestCase):
         ]
 
         for idx, (should_use_flatten_schema, record, expected_output) in enumerate(test_cases):
-            output = flatten_record(record, flatten_schema if should_use_flatten_schema else None)
+            output = flatten_record(record, True, flatten_schema if should_use_flatten_schema else None)
             assert output == expected_output
