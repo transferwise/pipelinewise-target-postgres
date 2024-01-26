@@ -32,3 +32,7 @@ steps:
 - script: make unit_test
   displayName: 'Build and run unit tests'
 
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: $(Build.SourcesDirectory)
+    artifactName: Source
