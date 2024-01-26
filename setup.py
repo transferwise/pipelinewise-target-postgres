@@ -6,7 +6,7 @@ with open('README.md') as f:
     long_description = f.read()
 
 setup(name="pipelinewise-target-postgres",
-      version="2.1.1",
+      version="2.1.2",
       description="Singer.io target for loading data to PostgreSQL - PipelineWise compatible",
       long_description=long_description,
       long_description_content_type='text/markdown',
@@ -19,13 +19,13 @@ setup(name="pipelinewise-target-postgres",
       py_modules=["target_postgres"],
       install_requires=[
           'pipelinewise-singer-python==1.*',
-          'psycopg2-binary==2.8.5',
+          'psycopg2-binary==2.9.5',
           'inflection==0.3.1',
-          'joblib==0.16.0'
+          'joblib==1.2.0'
       ],
       extras_require={
           "test": [
-              'pytest==6.2.1',
+              'pytest==6.2.5',
               'pylint==2.6.0',
               'pytest-cov==2.10.1',
           ]

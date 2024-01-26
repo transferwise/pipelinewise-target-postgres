@@ -1,3 +1,9 @@
+2.1.2 (2023-01-17)
+-------------------
+- Add python 3.10 compatibility
+- Bump `joblib` from 0.16.0 to 1.2.0
+- Bump `psycopg2-binary` from 2.8.5 to 2.9.5 to get macOS arm64 (Apple M1) wheels
+
 2.1.1 (2021-05-11)
 -------------------
 - Bump `joblib` from 0.13.2 to 0.16.0 to be Python 3.8 compatible
